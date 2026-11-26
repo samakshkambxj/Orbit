@@ -9,13 +9,13 @@
 
 ### Status
 
-- Initial commits: pending.
-- CI: pending first run.
+- Initial commits: `5144de2`, `5a8ab9e`, `24dc3b3`, `1a39ee9`, `529d731`.
+- CI: green. Run `45835564282` passed unit tests, lint and debug APK assembly in
+  3m12s. The `orbit-debug-1` artifact was uploaded.
 
 ### Next
 
-1. Confirm CI is green and publish the debug APK artifact.
-2. Build the Rikka-style application shell: navigation, chat surface, composer,
+1. Build the Rikka-style application shell: navigation, chat surface, composer,
    model/provider pickers and settings.
-3. Add provider configuration and persistent chat.
-4. Add the coding agent, approvals, diff review, editor, Git and terminal.
+2. Add provider configuration and persistent chat.
+3. Add the coding agent, approvals, diff review, editor, Git and terminal.
