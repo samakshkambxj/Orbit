@@ -253,7 +253,7 @@ class AnthropicAdapter(
         return when (root["type"].textOrNull()) {
             "content_block_start" -> {
                 val block = root["content_block"]?.let { runCatching { it.jsonObject }.getOrNull() }
-                if (block?.get("type").textOrNull() == "tool_use") {
+                if (block != null && block["type"].textOrNull() == "tool_use") {
                     toolState.start(
                         index = index,
                         id = block["id"].textOrNull().orEmpty(),
