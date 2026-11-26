@@ -214,6 +214,9 @@ class ChatService(
                     toolError = it.toolError,
                 )
             }
+            // Trimming the window can leave a tool result without the user turn
+            // it belongs to. Providers reject that, so start at a user turn.
+            .dropWhile { it.role != "user" }
 
         val systemPrompt = buildString {
             append(conversation.systemPrompt.ifBlank { SYSTEM_PROMPT })
