@@ -66,4 +66,8 @@ app/src/main/java/com/orbit/app/
 - [x] Workspace browser and text editor
 - [x] Coding agent with workspace tools, approvals and diff previews
 - [x] Exact text edits and line-range reads for the agent
-- [ ] Git and terminal support
+
+## Roadmap
+
+- Git and terminal support for the workspace
+- Voice input and richer export options
