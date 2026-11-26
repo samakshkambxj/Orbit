@@ -60,6 +60,45 @@ fun RenameChatDialog(
 }
 
 @Composable
+fun SystemPromptDialog(
+    initialPrompt: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(TextFieldValue(initialPrompt)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("System prompt") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    placeholder = { Text("You are ORBIT, a concise and capable assistant…") },
+                    minLines = 5,
+                    maxLines = 10,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "Leave empty to use the default ORBIT instructions. This applies to new replies in this chat.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(value.text.trim()) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
 fun ConfirmDialog(
     title: String,
     message: String,

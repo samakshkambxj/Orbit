@@ -64,6 +64,12 @@ class ChatViewModel(
         viewModelScope.launch { container.conversations.rename(conversationId, title) }
     }
 
+    fun setSystemPrompt(prompt: String) {
+        viewModelScope.launch {
+            container.conversations.setSystemPrompt(conversationId, prompt)
+        }
+    }
+
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
             container.chat.stop(conversationId)

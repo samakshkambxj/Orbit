@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Api
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -26,6 +27,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.orbit.app.ui.assistants.AssistantEditScreen
+import com.orbit.app.ui.assistants.AssistantsScreen
 import com.orbit.app.ui.chat.ChatScreen
 import com.orbit.app.ui.chats.ChatListScreen
 import com.orbit.app.ui.providers.ProviderEditScreen
@@ -35,12 +38,17 @@ import com.orbit.app.ui.settings.SettingsScreen
 private object Routes {
     const val CHATS = "chats"
     const val CHAT = "chat/{conversationId}"
+    const val ASSISTANTS = "assistants"
+    const val ASSISTANT_EDIT = "assistant/edit?assistantId={assistantId}"
     const val PROVIDERS = "providers"
     const val PROVIDER_EDIT = "provider/edit?providerId={providerId}"
     const val SETTINGS = "settings"
 
     fun chat(id: String) = "chat/$id"
-    fun providerEdit(id: String?) = if (id == null) "provider/edit" else "provider/edit?providerId=$id"
+    fun assistantEdit(id: String?) =
+        if (id == null) "assistant/edit" else "assistant/edit?assistantId=$id"
+    fun providerEdit(id: String?) =
+        if (id == null) "provider/edit" else "provider/edit?providerId=$id"
 }
 
 private data class TopLevelDestination(
@@ -51,6 +59,7 @@ private data class TopLevelDestination(
 
 private val topLevelDestinations = listOf(
     TopLevelDestination(Routes.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
+    TopLevelDestination(Routes.ASSISTANTS, "Assistants", Icons.Outlined.AutoAwesome),
     TopLevelDestination(Routes.PROVIDERS, "Providers", Icons.Outlined.Api),
     TopLevelDestination(Routes.SETTINGS, "Settings", Icons.Outlined.Settings),
 )
@@ -118,6 +127,32 @@ fun OrbitApp() {
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 ChatScreen(
                     conversationId = conversationId,
+                    onBack = { navController.popBackStack() },
+                    onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
+                )
+            }
+
+            composable(Routes.ASSISTANTS) {
+                AssistantsScreen(
+                    onAdd = { navController.navigate(Routes.assistantEdit(null)) },
+                    onEdit = { id -> navController.navigate(Routes.assistantEdit(id)) },
+                    onOpenChat = { id -> navController.navigate(Routes.chat(id)) },
+                    onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
+                )
+            }
+
+            composable(
+                route = Routes.ASSISTANT_EDIT,
+                arguments = listOf(
+                    navArgument("assistantId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                AssistantEditScreen(
+                    assistantId = entry.arguments?.getString("assistantId"),
                     onBack = { navController.popBackStack() },
                     onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
                 )

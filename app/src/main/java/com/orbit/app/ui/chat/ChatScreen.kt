@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,7 @@ import com.orbit.app.data.model.MessageStatus
 import com.orbit.app.ui.components.ConfirmDialog
 import com.orbit.app.ui.components.MarkdownText
 import com.orbit.app.ui.components.RenameChatDialog
+import com.orbit.app.ui.components.SystemPromptDialog
 import com.orbit.app.ui.orbitViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +91,7 @@ fun ChatScreen(
     var actionsOpen by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showSystemPrompt by remember { mutableStateOf(false) }
 
     val modelName = models.firstOrNull {
         it.providerId == conversation?.providerId && it.modelId == conversation?.modelId
@@ -210,6 +213,14 @@ fun ChatScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text("System prompt") },
+                                leadingIcon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
+                                onClick = {
+                                    actionsOpen = false
+                                    showSystemPrompt = true
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Delete") },
                                 leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
                                 onClick = {
@@ -324,6 +335,17 @@ fun ChatScreen(
             onConfirm = { title ->
                 viewModel.rename(title)
                 showRename = false
+            },
+        )
+    }
+
+    if (showSystemPrompt) {
+        SystemPromptDialog(
+            initialPrompt = conversation?.systemPrompt.orEmpty(),
+            onDismiss = { showSystemPrompt = false },
+            onConfirm = { prompt ->
+                viewModel.setSystemPrompt(prompt)
+                showSystemPrompt = false
             },
         )
     }
