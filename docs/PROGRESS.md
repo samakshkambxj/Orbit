@@ -1,5 +1,24 @@
 # ORBIT progress
 
+## 2026-11-26 — images and model management
+
+- Added image attachments: picker, downscaling into app storage, multimodal
+  requests for OpenAI-compatible and Anthropic models, and thumbnails in chat.
+- Added multiple models per provider with add, update and remove controls.
+- Attachments are cleaned up when a chat is deleted or all chats are cleared.
+
+### Status
+
+- Feature commits: `cf50a41`, `78d5173`, `26dc759`.
+- CI: green. Run `45844416273` passed unit tests, lint and debug APK assembly.
+
+### Next
+
+1. Workspace folder, file browser and text editor.
+2. Coding agent with tool calls, approvals and diff review.
+3. Git and terminal support.
+4. Voice input and richer export options.
+
 ## 2026-11-26 — assistants and UI polish
 
 - Added assistant presets (name, icon, system prompt, model) with a Discover tab.

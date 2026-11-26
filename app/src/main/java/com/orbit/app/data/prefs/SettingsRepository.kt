@@ -23,6 +23,11 @@ data class AppSettings(
     val defaultModelId: String = "",
 )
 
+data class WorkspaceRef(
+    val uri: String,
+    val name: String,
+)
+
 class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.orbitDataStore.data
         .catch { error ->
@@ -37,10 +42,29 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    val workspace: Flow<WorkspaceRef?> = context.orbitDataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { prefs ->
+            val uri = prefs[WORKSPACE_URI].orEmpty()
+            if (uri.isBlank()) null else WorkspaceRef(uri, prefs[WORKSPACE_NAME].orEmpty())
+        }
+
     suspend fun setThemeMode(value: ThemeMode) = edit { it[THEME_MODE] = value.name }
     suspend fun setDynamicColor(value: Boolean) = edit { it[DYNAMIC_COLOR] = value }
     suspend fun setDefaultProvider(value: String) = edit { it[DEFAULT_PROVIDER] = value }
     suspend fun setDefaultModel(value: String) = edit { it[DEFAULT_MODEL] = value }
+
+    suspend fun setWorkspace(uri: String?, name: String?) = edit { prefs ->
+        if (uri == null) {
+            prefs.remove(WORKSPACE_URI)
+            prefs.remove(WORKSPACE_NAME)
+        } else {
+            prefs[WORKSPACE_URI] = uri
+            prefs[WORKSPACE_NAME] = name.orEmpty()
+        }
+    }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.orbitDataStore.edit(block)
@@ -54,5 +78,7 @@ class SettingsRepository(private val context: Context) {
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val DEFAULT_PROVIDER = stringPreferencesKey("default_provider")
         val DEFAULT_MODEL = stringPreferencesKey("default_model")
+        val WORKSPACE_URI = stringPreferencesKey("workspace_uri")
+        val WORKSPACE_NAME = stringPreferencesKey("workspace_name")
     }
 }

@@ -8,6 +8,7 @@ import com.orbit.app.data.db.OrbitDatabase
 import com.orbit.app.data.prefs.SettingsRepository
 import com.orbit.app.data.repo.AssistantRepository
 import com.orbit.app.data.repo.ConversationRepository
+import com.orbit.app.data.workspace.WorkspaceRepository
 import com.orbit.app.provider.ProviderEngine
 import com.orbit.app.provider.ProviderRepository
 import java.util.concurrent.TimeUnit
@@ -45,6 +46,9 @@ class AppContainer(context: Context) {
     }
     val assistants: AssistantRepository by lazy {
         AssistantRepository(database.assistantDao())
+    }
+    val workspace: WorkspaceRepository by lazy {
+        WorkspaceRepository(appContext, settings)
     }
     val providerEngine: ProviderEngine by lazy { ProviderEngine(httpClient, json) }
     val chat: ChatService by lazy {

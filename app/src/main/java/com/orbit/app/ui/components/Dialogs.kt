@@ -60,6 +60,47 @@ fun RenameChatDialog(
 }
 
 @Composable
+fun NameDialog(
+    title: String,
+    label: String,
+    initialValue: String = "",
+    confirmLabel: String = "Create",
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(TextFieldValue(initialValue)) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                singleLine = true,
+                label = { Text(label) },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(value.text.trim()) },
+                enabled = value.text.isNotBlank(),
+            ) { Text(confirmLabel) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
 fun SystemPromptDialog(
     initialPrompt: String,
     onDismiss: () -> Unit,

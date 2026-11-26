@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.documentfile)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
