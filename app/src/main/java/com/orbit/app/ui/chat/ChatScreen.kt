@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.DropdownMenu
@@ -55,9 +56,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.content.Intent
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,6 +83,7 @@ fun ChatScreen(
     val viewModel: ChatViewModel = orbitViewModel(key = conversationId) {
         ChatViewModel(conversationId, it)
     }
+    val context = LocalContext.current
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val models by viewModel.models.collectAsStateWithLifecycle()
@@ -210,6 +214,14 @@ fun ChatScreen(
                                 onClick = {
                                     actionsOpen = false
                                     showRename = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share chat") },
+                                leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                                onClick = {
+                                    actionsOpen = false
+                                    shareChat(context, conversation?.title.orEmpty(), messages)
                                 },
                             )
                             DropdownMenuItem(
@@ -514,4 +526,32 @@ private fun Composer(
             }
         }
     }
+}
+
+private fun shareChat(
+    context: android.content.Context,
+    title: String,
+    messages: List<MessageEntity>,
+) {
+    val body = buildString {
+        appendLine(title.ifBlank { "ORBIT chat" })
+        appendLine()
+        messages.forEach { message ->
+            val label = when (message.role) {
+                "user" -> "You"
+                "assistant" -> "ORBIT"
+                else -> message.role
+            }
+            appendLine("$label:")
+            appendLine(message.content.ifBlank { message.error.orEmpty() })
+            appendLine()
+        }
+    }.trim()
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, title.ifBlank { "ORBIT chat" })
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share chat"))
 }
