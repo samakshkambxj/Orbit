@@ -5,6 +5,7 @@ import com.orbit.app.chat.ChatService
 import com.orbit.app.core.security.SecretStore
 import com.orbit.app.data.db.OrbitDatabase
 import com.orbit.app.data.prefs.SettingsRepository
+import com.orbit.app.data.repo.AssistantRepository
 import com.orbit.app.data.repo.ConversationRepository
 import com.orbit.app.provider.ProviderEngine
 import com.orbit.app.provider.ProviderRepository
@@ -39,6 +40,9 @@ class AppContainer(context: Context) {
     }
     val conversations: ConversationRepository by lazy {
         ConversationRepository(database.conversationDao(), database.messageDao())
+    }
+    val assistants: AssistantRepository by lazy {
+        AssistantRepository(database.assistantDao())
     }
     val providerEngine: ProviderEngine by lazy { ProviderEngine(httpClient, json) }
     val chat: ChatService by lazy {

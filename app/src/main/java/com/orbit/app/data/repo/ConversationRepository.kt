@@ -25,13 +25,19 @@ class ConversationRepository(
 
     suspend fun deleteMessage(id: String) = messageDao.delete(id)
 
-    suspend fun create(providerId: String, modelId: String, title: String = "New chat"): ConversationEntity {
+    suspend fun create(
+        providerId: String,
+        modelId: String,
+        title: String = "New chat",
+        systemPrompt: String = "",
+    ): ConversationEntity {
         val now = System.currentTimeMillis()
         val conversation = ConversationEntity(
             id = UUID.randomUUID().toString(),
             title = title,
             providerId = providerId,
             modelId = modelId,
+            systemPrompt = systemPrompt.trim(),
             createdAt = now,
             updatedAt = now,
         )
@@ -50,6 +56,10 @@ class ConversationRepository(
 
     suspend fun setModel(id: String, providerId: String, modelId: String) {
         conversationDao.updateModel(id, providerId, modelId, System.currentTimeMillis())
+    }
+
+    suspend fun setSystemPrompt(id: String, prompt: String) {
+        conversationDao.updateSystemPrompt(id, prompt.trim(), System.currentTimeMillis())
     }
 
     suspend fun delete(id: String) {

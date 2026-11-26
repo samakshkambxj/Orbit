@@ -1,5 +1,7 @@
 package com.orbit.app.data.db
 
+import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -10,7 +12,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import android.content.Context
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "providers")
@@ -41,6 +44,20 @@ data class ConversationEntity(
     val providerId: String,
     val modelId: String,
     val lastPreview: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val systemPrompt: String = "",
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+@Entity(tableName = "assistants", indices = [Index("updatedAt")])
+data class AssistantEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val emoji: String,
+    val systemPrompt: String,
+    val providerId: String,
+    val modelId: String,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -115,7 +132,25 @@ interface ConversationDao {
     @Query("UPDATE conversations SET providerId = :providerId, modelId = :modelId, updatedAt = :now WHERE id = :id")
     suspend fun updateModel(id: String, providerId: String, modelId: String, now: Long)
 
+    @Query("UPDATE conversations SET systemPrompt = :prompt, updatedAt = :now WHERE id = :id")
+    suspend fun updateSystemPrompt(id: String, prompt: String, now: Long)
+
     @Query("DELETE FROM conversations WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
+interface AssistantDao {
+    @Query("SELECT * FROM assistants ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<AssistantEntity>>
+
+    @Query("SELECT * FROM assistants WHERE id = :id")
+    suspend fun get(id: String): AssistantEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(assistant: AssistantEntity)
+
+    @Query("DELETE FROM assistants WHERE id = :id")
     suspend fun delete(id: String)
 }
 
@@ -149,8 +184,9 @@ interface MessageDao {
         ModelEntity::class,
         ConversationEntity::class,
         MessageEntity::class,
+        AssistantEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class OrbitDatabase : RoomDatabase() {
@@ -158,9 +194,35 @@ abstract class OrbitDatabase : RoomDatabase() {
     abstract fun modelDao(): ModelDao
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+    abstract fun assistantDao(): AssistantDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN systemPrompt TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS assistants (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "name TEXT NOT NULL, " +
+                        "emoji TEXT NOT NULL, " +
+                        "systemPrompt TEXT NOT NULL, " +
+                        "providerId TEXT NOT NULL, " +
+                        "modelId TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_assistants_updatedAt " +
+                        "ON assistants (updatedAt)",
+                )
+            }
+        }
+
         fun build(context: Context): OrbitDatabase =
-            Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db").build()
+            Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
     }
 }

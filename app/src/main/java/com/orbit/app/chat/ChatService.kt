@@ -125,7 +125,7 @@ class ChatService(
             .filter { it.status != MessageStatus.ERROR.name && it.content.isNotBlank() }
             .map { ChatTurn(it.role, it.content) }
         val turns = buildList {
-            add(ChatTurn("system", SYSTEM_PROMPT))
+            add(ChatTurn("system", conversation.systemPrompt.ifBlank { SYSTEM_PROMPT }))
             addAll(history)
         }
 
