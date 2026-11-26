@@ -4,64 +4,35 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.orbit.app.data.model.ThemeMode
+import com.orbit.app.data.prefs.AppSettings
+import com.orbit.app.ui.LocalAppContainer
+import com.orbit.app.ui.nav.OrbitApp
 import com.orbit.app.ui.theme.OrbitTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val container = (application as OrbitApplication).container
         setContent {
-            OrbitTheme {
-                StartScreen()
+            val settings by container.settings.settings.collectAsStateWithLifecycle(
+                initialValue = AppSettings(),
+            )
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+            CompositionLocalProvider(LocalAppContainer provides container) {
+                OrbitTheme(darkTheme = darkTheme, dynamicColor = settings.dynamicColor) {
+                    OrbitApp()
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun StartScreen() {
-    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "ORBIT",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = "Clean Compose start",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun StartScreenPreview() {
-    OrbitTheme {
-        StartScreen()
     }
 }
