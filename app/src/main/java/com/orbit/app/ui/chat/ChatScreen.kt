@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,12 +73,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.orbit.app.chat.decodeStoredToolCalls
+import com.orbit.app.chat.describeToolCall
 import com.orbit.app.data.db.MessageEntity
 import com.orbit.app.data.model.MessageStatus
+import com.orbit.app.data.model.ToolCall
 import com.orbit.app.ui.components.ConfirmDialog
 import com.orbit.app.ui.components.MarkdownText
 import com.orbit.app.ui.components.RenameChatDialog
@@ -90,6 +96,7 @@ fun ChatScreen(
     conversationId: String,
     onBack: () -> Unit,
     onOpenProviders: () -> Unit,
+    onOpenWorkspace: () -> Unit,
 ) {
     val viewModel: ChatViewModel = orbitViewModel(key = conversationId) {
         ChatViewModel(conversationId, it)
@@ -103,6 +110,7 @@ fun ChatScreen(
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val pendingImages by viewModel.pendingImages.collectAsStateWithLifecycle()
     val imageError by viewModel.imageError.collectAsStateWithLifecycle()
+    val workspace by viewModel.workspace.collectAsStateWithLifecycle()
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -123,6 +131,13 @@ fun ChatScreen(
     val providerAvailable = currentConversation == null ||
         providers.any { it.id == currentConversation.providerId }
     val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
+    val pendingApproval = messages.lastOrNull {
+        it.status == MessageStatus.AWAITING_APPROVAL.name
+    }
+    val pendingCalls = remember(pendingApproval?.id, pendingApproval?.toolCalls) {
+        decodeStoredToolCalls(pendingApproval?.toolCalls.orEmpty())
+    }
+    val agentNeedsWorkspace = conversation?.agentEnabled == true && workspace == null
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
@@ -171,6 +186,13 @@ fun ChatScreen(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp),
                                 )
+                                if (conversation?.agentEnabled == true) {
+                                    Text(
+                                        text = "· Agent",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                             DropdownMenu(
                                 expanded = modelMenuOpen,
@@ -251,6 +273,22 @@ fun ChatScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (conversation?.agentEnabled == true) {
+                                            "Agent mode: on"
+                                        } else {
+                                            "Agent mode: off"
+                                        },
+                                    )
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Build, contentDescription = null) },
+                                onClick = {
+                                    actionsOpen = false
+                                    viewModel.setAgentEnabled(conversation?.agentEnabled != true)
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Delete") },
                                 leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
                                 onClick = {
@@ -287,11 +325,38 @@ fun ChatScreen(
                         }
                     }
                 }
+                if (agentNeedsWorkspace) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Agent mode needs a workspace folder.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onOpenWorkspace) { Text("Open") }
+                        }
+                    }
+                }
+                if (pendingApproval != null && pendingCalls.isNotEmpty() && !isGenerating) {
+                    ApprovalCard(
+                        calls = pendingCalls,
+                        onApprove = viewModel::approveToolCalls,
+                        onDeny = viewModel::denyToolCalls,
+                    )
+                }
                 Composer(
                     value = input,
                     onValueChange = viewModel::setInput,
                     isGenerating = isGenerating,
-                    canSend = input.isNotBlank() || pendingImages.isNotEmpty(),
+                    canSend = (input.isNotBlank() || pendingImages.isNotEmpty()) &&
+                        pendingApproval == null,
                     pendingImages = pendingImages,
                     imageError = imageError,
                     onAttach = {
@@ -356,6 +421,7 @@ fun ChatScreen(
                             canRetry = !isGenerating && message.id == lastAssistantId,
                             onRetry = viewModel::retry,
                         )
+                        "tool" -> ToolResultMessage(message)
                         else -> Text(
                             text = message.content,
                             style = MaterialTheme.typography.bodySmall,
@@ -499,7 +565,26 @@ private fun AssistantMessage(
         if (message.content.isNotBlank()) {
             MarkdownText(text = message.content)
         }
+        val calls = remember(message.toolCalls) {
+            decodeStoredToolCalls(message.toolCalls)
+        }
+        if (calls.isNotEmpty()) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                calls.forEach { call -> ToolCallRow(call) }
+            }
+        }
         when (message.status) {
+            MessageStatus.AWAITING_APPROVAL.name -> {
+                Text(
+                    text = "Waiting for your approval.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             MessageStatus.STREAMING.name -> {
                 if (message.content.isBlank()) {
                     Text(
@@ -531,6 +616,147 @@ private fun AssistantMessage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolCallRow(call: ToolCall) {
+    val summary = remember(call) { describeToolCall(call) }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Build,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp),
+            ) {
+                Text(
+                    text = call.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                )
+                if (summary.isNotBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApprovalCard(
+    calls: List<ToolCall>,
+    onApprove: () -> Unit,
+    onDeny: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Text(
+                text = "Approve tool calls",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                text = "These calls change files in your workspace.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            calls.forEach { call -> ToolCallRow(call) }
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(onClick = onDeny) { Text("Deny") }
+                Button(
+                    onClick = onApprove,
+                    modifier = Modifier.padding(start = 8.dp),
+                ) { Text("Approve") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolResultMessage(message: MessageEntity) {
+    var expanded by remember { mutableStateOf(false) }
+    val lines = remember(message.content) { message.content.lines() }
+    val preview = if (expanded) message.content else lines.take(6).joinToString("\n")
+    val accent = if (message.toolError) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.Build,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = message.toolName.ifBlank { "tool" },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp),
+                )
+                Text(
+                    text = if (message.toolError) "Failed" else "Done",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                )
+            }
+            if (message.content.isNotBlank()) {
+                Text(
+                    text = preview,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (lines.size > 6) {
+                    TextButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.padding(top = 2.dp),
+                    ) {
+                        Text(if (expanded) "Show less" else "Show more")
+                    }
+                }
             }
         }
     }

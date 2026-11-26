@@ -137,6 +137,7 @@ fun OrbitApp() {
                     conversationId = conversationId,
                     onBack = { navController.popBackStack() },
                     onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
+                    onOpenWorkspace = { navController.navigate(Routes.WORKSPACE) },
                 )
             }
 

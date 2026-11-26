@@ -29,6 +29,9 @@ class ChatViewModel(
     val models = container.providers.observeAllModels()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val workspace = container.workspace.workspace
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     private val _input = MutableStateFlow("")
     val input = _input.asStateFlow()
 
@@ -102,6 +105,20 @@ class ChatViewModel(
         viewModelScope.launch {
             container.conversations.setSystemPrompt(conversationId, prompt)
         }
+    }
+
+    fun setAgentEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            container.conversations.setAgentEnabled(conversationId, enabled)
+        }
+    }
+
+    fun approveToolCalls() {
+        container.chat.approveToolCalls(conversationId)
+    }
+
+    fun denyToolCalls() {
+        container.chat.denyToolCalls(conversationId)
     }
 
     fun delete(onDeleted: () -> Unit) {
