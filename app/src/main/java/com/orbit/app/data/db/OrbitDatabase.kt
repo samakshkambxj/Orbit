@@ -46,6 +46,8 @@ data class ConversationEntity(
     val lastPreview: String = "",
     @ColumnInfo(defaultValue = "''")
     val systemPrompt: String = "",
+    @ColumnInfo(defaultValue = "0")
+    val agentEnabled: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -73,6 +75,14 @@ data class MessageEntity(
     val content: String = "",
     @ColumnInfo(defaultValue = "''")
     val attachments: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val toolCalls: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val toolCallId: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val toolName: String = "",
+    @ColumnInfo(defaultValue = "0")
+    val toolError: Boolean = false,
     val status: String = "COMPLETE",
     val error: String? = null,
     val createdAt: Long,
@@ -140,6 +150,9 @@ interface ConversationDao {
     @Query("UPDATE conversations SET systemPrompt = :prompt, updatedAt = :now WHERE id = :id")
     suspend fun updateSystemPrompt(id: String, prompt: String, now: Long)
 
+    @Query("UPDATE conversations SET agentEnabled = :enabled, updatedAt = :now WHERE id = :id")
+    suspend fun updateAgentEnabled(id: String, enabled: Boolean, now: Long)
+
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: String)
 }
@@ -191,7 +204,7 @@ interface MessageDao {
         MessageEntity::class,
         AssistantEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class OrbitDatabase : RoomDatabase() {
@@ -233,9 +246,29 @@ abstract class OrbitDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN agentEnabled INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN toolCalls TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN toolCallId TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN toolName TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN toolError INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun build(context: Context): OrbitDatabase =
             Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

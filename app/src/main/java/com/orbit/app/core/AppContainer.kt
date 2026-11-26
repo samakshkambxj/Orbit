@@ -52,6 +52,13 @@ class AppContainer(context: Context) {
     }
     val providerEngine: ProviderEngine by lazy { ProviderEngine(httpClient, json) }
     val chat: ChatService by lazy {
-        ChatService(applicationScope, conversations, providers, providerEngine)
+        ChatService(
+            appScope = applicationScope,
+            conversations = conversations,
+            providers = providers,
+            engine = providerEngine,
+            workspace = workspace,
+            json = json,
+        )
     }
 }

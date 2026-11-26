@@ -62,6 +62,10 @@ class ConversationRepository(
         conversationDao.updateSystemPrompt(id, prompt.trim(), System.currentTimeMillis())
     }
 
+    suspend fun setAgentEnabled(id: String, enabled: Boolean) {
+        conversationDao.updateAgentEnabled(id, enabled, System.currentTimeMillis())
+    }
+
     suspend fun delete(id: String) {
         messageDao.deleteForConversation(id)
         conversationDao.delete(id)
@@ -72,6 +76,10 @@ class ConversationRepository(
         role: String,
         content: String,
         attachments: String = "",
+        toolCalls: String = "",
+        toolCallId: String = "",
+        toolName: String = "",
+        toolError: Boolean = false,
         status: String = "COMPLETE",
         error: String? = null,
     ): MessageEntity {
@@ -81,6 +89,10 @@ class ConversationRepository(
             role = role,
             content = content,
             attachments = attachments,
+            toolCalls = toolCalls,
+            toolCallId = toolCallId,
+            toolName = toolName,
+            toolError = toolError,
             status = status,
             error = error,
             createdAt = System.currentTimeMillis(),

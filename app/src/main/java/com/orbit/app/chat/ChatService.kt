@@ -5,7 +5,9 @@ import com.orbit.app.data.model.ChatImage
 import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.MessageStatus
+import com.orbit.app.data.model.ToolCall
 import com.orbit.app.data.repo.ConversationRepository
+import com.orbit.app.data.workspace.WorkspaceRepository
 import com.orbit.app.provider.ProviderEngine
 import com.orbit.app.provider.ProviderEvent
 import com.orbit.app.provider.ProviderErrors
@@ -20,19 +22,30 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Runs chat generations in an application-scoped job so streaming survives
- * rotation. Partial output is persisted while streaming.
+ * rotation. Partial output is persisted while streaming. When agent mode is on,
+ * tool calls are executed against the workspace, with mutations gated by user
+ * approval.
  */
 class ChatService(
     private val appScope: CoroutineScope,
     private val conversations: ConversationRepository,
     private val providers: ProviderRepository,
     private val engine: ProviderEngine,
+    private val workspace: WorkspaceRepository,
+    private val json: Json,
 ) {
+    private val agentTools = AgentTools(workspace, json)
+    private val toolCallSerializer = ListSerializer(ToolCall.serializer())
     private val jobs = ConcurrentHashMap<String, Job>()
     private val lock = Any()
     private val _active = MutableStateFlow<Set<String>>(emptySet())
@@ -51,6 +64,16 @@ class ChatService(
     fun retry(conversationId: String) {
         if (isActive(conversationId)) return
         launchGeneration(conversationId) { retryGeneration(conversationId) }
+    }
+
+    fun approveToolCalls(conversationId: String) {
+        if (isActive(conversationId)) return
+        launchGeneration(conversationId) { resolveToolCalls(conversationId, approved = true) }
+    }
+
+    fun denyToolCalls(conversationId: String) {
+        if (isActive(conversationId)) return
+        launchGeneration(conversationId) { resolveToolCalls(conversationId, approved = false) }
     }
 
     fun stop(conversationId: String) {
@@ -104,15 +127,38 @@ class ChatService(
     }
 
     private suspend fun retryGeneration(conversationId: String) {
-        val last = conversations.lastMessage(conversationId)
-        if (last != null && last.role == "assistant") {
-            conversations.deleteMessage(last.id)
+        val all = conversations.messages(conversationId, 10_000)
+        val lastAssistant = all.indexOfLast { it.role == "assistant" }
+        if (lastAssistant >= 0) {
+            all.drop(lastAssistant).forEach { conversations.deleteMessage(it.id) }
         }
         respond(conversationId)
     }
 
-    private suspend fun respond(conversationId: String) {
+    private suspend fun resolveToolCalls(conversationId: String, approved: Boolean) {
+        val all = conversations.messages(conversationId, 200)
+        val index = all.indexOfLast { it.status == MessageStatus.AWAITING_APPROVAL.name }
+        if (index < 0) return
+        val message = all[index]
+        all.drop(index + 1).forEach { conversations.deleteMessage(it.id) }
+        val calls = decodeCalls(message.toolCalls)
+        conversations.upsertMessage(message.copy(status = MessageStatus.COMPLETE.name))
+        executeCalls(conversationId, calls, approved)
+        respond(conversationId)
+    }
+
+    private suspend fun respond(conversationId: String, depth: Int = 0) {
         val conversation = conversations.get(conversationId) ?: return
+        if (depth > MAX_TOOL_STEPS) {
+            appendError(
+                conversationId,
+                "The agent stopped after $MAX_TOOL_STEPS tool steps. Send a new message to continue.",
+            )
+            return
+        }
+        val pending = conversations.lastMessage(conversationId)
+        if (pending != null && pending.status == MessageStatus.AWAITING_APPROVAL.name) return
+
         val config = providers.configFor(conversation.providerId)
         if (config == null) {
             appendError(conversationId, "This chat's provider no longer exists. Add a provider to continue.")
@@ -123,6 +169,10 @@ class ChatService(
             return
         }
 
+        val workspaceRef = workspace.workspace.first()
+        val agentActive = conversation.agentEnabled && workspaceRef != null
+        val tools = if (agentActive) agentTools.specs else emptyList()
+
         val assistant = conversations.appendMessage(
             conversationId = conversationId,
             role = "assistant",
@@ -132,23 +182,39 @@ class ChatService(
 
         val history = conversations.messages(conversationId, MAX_HISTORY_MESSAGES)
             .filter { it.id != assistant.id }
+            .filter { it.status != MessageStatus.ERROR.name }
             .filter {
-                it.status != MessageStatus.ERROR.name &&
-                    (it.content.isNotBlank() || it.attachments.isNotBlank())
+                it.content.isNotBlank() ||
+                    it.attachments.isNotBlank() ||
+                    it.toolCalls.isNotBlank() ||
+                    it.toolCallId.isNotBlank()
             }
             .map {
                 ChatTurn(
                     role = it.role,
                     content = it.content,
                     images = loadImages(it.attachments),
+                    toolCalls = decodeCalls(it.toolCalls),
+                    toolCallId = it.toolCallId,
+                    toolName = it.toolName,
+                    toolError = it.toolError,
                 )
             }
+
+        val systemPrompt = buildString {
+            append(conversation.systemPrompt.ifBlank { SYSTEM_PROMPT })
+            if (agentActive) {
+                append("\n\n")
+                append(agentInstructions(workspaceRef?.name.orEmpty()))
+            }
+        }
         val turns = buildList {
-            add(ChatTurn("system", conversation.systemPrompt.ifBlank { SYSTEM_PROMPT }))
+            add(ChatTurn("system", systemPrompt))
             addAll(history)
         }
 
         val content = StringBuilder()
+        val calls = mutableListOf<ToolCall>()
         var lastPersist = 0L
         try {
             engine.stream(
@@ -158,10 +224,12 @@ class ChatService(
                     turns = turns,
                     maxTokens = 4096,
                     stream = true,
+                    tools = tools,
                 ),
             ).collect { event ->
                 when (event) {
                     is ProviderEvent.Text -> content.append(event.value)
+                    is ProviderEvent.ToolCallReady -> calls += event.call
                     is ProviderEvent.Finished -> Unit
                 }
                 val now = System.currentTimeMillis()
@@ -177,17 +245,46 @@ class ChatService(
                     }
                 }
             }
-            if (content.isBlank()) throw ProviderErrors.emptyResponse()
+
+            val text = content.toString().trimEnd()
+            if (calls.isEmpty()) {
+                if (text.isBlank()) throw ProviderErrors.emptyResponse()
+                withContext(NonCancellable) {
+                    conversations.upsertMessage(
+                        assistant.copy(
+                            content = text,
+                            status = MessageStatus.COMPLETE.name,
+                            error = null,
+                        ),
+                    )
+                    conversations.touch(conversationId, text)
+                }
+                return
+            }
+
+            val needsApproval = calls.any { agentTools.isMutation(it.name) }
             withContext(NonCancellable) {
                 conversations.upsertMessage(
                     assistant.copy(
-                        content = content.toString().trimEnd(),
-                        status = MessageStatus.COMPLETE.name,
+                        content = text,
+                        toolCalls = encodeCalls(calls),
+                        status = if (needsApproval) {
+                            MessageStatus.AWAITING_APPROVAL.name
+                        } else {
+                            MessageStatus.COMPLETE.name
+                        },
                         error = null,
                     ),
                 )
-                conversations.touch(conversationId, content.toString())
+                conversations.touch(
+                    conversationId,
+                    text.ifBlank { calls.joinToString(", ") { it.name } },
+                )
             }
+            if (needsApproval) return
+
+            executeCalls(conversationId, calls, approved = true)
+            respond(conversationId, depth + 1)
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 runCatching {
@@ -217,6 +314,53 @@ class ChatService(
             }
         }
     }
+
+    private suspend fun executeCalls(
+        conversationId: String,
+        calls: List<ToolCall>,
+        approved: Boolean,
+    ) {
+        calls.forEach { call ->
+            val outcome = if (approved) {
+                agentTools.execute(call)
+            } else {
+                ToolOutcome(
+                    content = "The user denied this tool call. Do not retry it without asking.",
+                    isError = true,
+                )
+            }
+            conversations.appendMessage(
+                conversationId = conversationId,
+                role = "tool",
+                content = outcome.content.take(MAX_TOOL_RESULT_CHARS),
+                toolCallId = call.id,
+                toolName = call.name,
+                toolError = outcome.isError,
+            )
+        }
+    }
+
+    private fun encodeCalls(calls: List<ToolCall>): String =
+        runCatching { json.encodeToString(toolCallSerializer, calls) }.getOrDefault("")
+
+    private fun decodeCalls(raw: String): List<ToolCall> =
+        if (raw.isBlank()) {
+            emptyList()
+        } else {
+            runCatching { json.decodeFromString(toolCallSerializer, raw) }.getOrDefault(emptyList())
+        }
+
+    private fun agentInstructions(workspaceName: String): String = buildString {
+        appendLine("You are ORBIT's coding agent, working inside the user's workspace folder.")
+        if (workspaceName.isNotBlank()) appendLine("Workspace name: $workspaceName")
+        appendLine("Paths are relative to the workspace root. Never use absolute paths or '..'.")
+        appendLine("Inspect files with list_files, read_file and search_files before editing.")
+        appendLine(
+            "write_file, create_file, create_folder, delete_path and rename_path require the " +
+                "user's approval and may be denied.",
+        )
+        appendLine("Keep changes focused and explain what changed when you are done.")
+    }.trim()
 
     private fun loadImages(attachments: String): List<ChatImage> {
         if (attachments.isBlank()) return emptyList()
@@ -253,6 +397,8 @@ class ChatService(
         const val MAX_MESSAGE_CHARS = 120_000
         const val MAX_HISTORY_MESSAGES = 60
         const val MAX_IMAGES = 4
+        const val MAX_TOOL_STEPS = 8
+        const val MAX_TOOL_RESULT_CHARS = 30_000
         const val STREAM_PERSIST_INTERVAL_MS = 150L
         const val SYSTEM_PROMPT =
             "You are ORBIT, a concise and capable AI assistant. Use fenced code blocks with a language tag for code. " +
