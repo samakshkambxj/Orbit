@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -197,7 +198,37 @@ fun ProviderEditScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            if (providerId != null) {
+            OutlinedButton(
+                onClick = viewModel::fetchModels,
+                enabled = !state.isFetchingModels && !state.isSaving && state.baseUrl.isNotBlank(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.isFetchingModels) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text("Fetching models…", modifier = Modifier.padding(start = 8.dp))
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text("Fetch models from provider", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+
+            state.fetchResult?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (state.savedId != null) {
                 Text("Saved models", style = MaterialTheme.typography.labelLarge)
                 if (models.isEmpty()) {
                     Text(

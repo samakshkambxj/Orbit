@@ -9,6 +9,7 @@ import com.orbit.app.data.prefs.SettingsRepository
 import com.orbit.app.data.repo.AssistantRepository
 import com.orbit.app.data.repo.ConversationRepository
 import com.orbit.app.data.workspace.WorkspaceRepository
+import com.orbit.app.provider.ModelCatalog
 import com.orbit.app.provider.ProviderEngine
 import com.orbit.app.provider.ProviderRepository
 import java.util.concurrent.TimeUnit
@@ -51,6 +52,7 @@ class AppContainer(context: Context) {
         WorkspaceRepository(appContext, settings)
     }
     val providerEngine: ProviderEngine by lazy { ProviderEngine(httpClient, json) }
+    val modelCatalog: ModelCatalog by lazy { ModelCatalog(httpClient, json) }
     val chat: ChatService by lazy {
         ChatService(
             appScope = applicationScope,

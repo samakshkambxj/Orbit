@@ -9,9 +9,11 @@ import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.ProviderInput
 import com.orbit.app.provider.ProviderPreset
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -26,25 +28,32 @@ data class ProviderEditState(
     val modelId: String = "",
     val modelDisplayName: String = "",
     val hasStoredKey: Boolean = false,
+    val savedId: String? = null,
     val isSaving: Boolean = false,
     val isTesting: Boolean = false,
+    val isFetchingModels: Boolean = false,
     val error: String? = null,
     val testResult: String? = null,
     val testSucceeded: Boolean = false,
+    val fetchResult: String? = null,
 )
 
 class ProviderEditViewModel(
     private val providerId: String?,
     private val container: AppContainer,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(ProviderEditState())
+    private val _state = MutableStateFlow(ProviderEditState(savedId = providerId))
     val state = _state.asStateFlow()
 
-    val models = if (providerId == null) {
-        flowOf(emptyList<ModelEntity>())
-    } else {
-        container.providers.observeModels(providerId)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<ModelEntity>())
+    private val savedId = MutableStateFlow(providerId)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val models = savedId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList<ModelEntity>())
+            else container.providers.observeModels(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<ModelEntity>())
 
     init {
         viewModelScope.launch {
@@ -163,11 +172,66 @@ class ProviderEditViewModel(
         viewModelScope.launch { container.providers.deleteModel(id) }
     }
 
+    fun fetchModels() {
+        if (_state.value.isFetchingModels) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(isFetchingModels = true, error = null, fetchResult = null)
+            }
+            val saved = persist()
+            saved.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        isFetchingModels = false,
+                        error = error.message ?: "Could not save the provider.",
+                    )
+                }
+                return@launch
+            }
+            val id = saved.getOrNull() ?: return@launch
+            val config = container.providers.configFor(id)
+            if (config == null) {
+                _state.update {
+                    it.copy(isFetchingModels = false, fetchResult = "Provider could not be loaded.")
+                }
+                return@launch
+            }
+            runCatching { container.modelCatalog.fetch(config) }
+                .onSuccess { ids ->
+                    if (ids.isEmpty()) {
+                        _state.update {
+                            it.copy(
+                                isFetchingModels = false,
+                                fetchResult = "The provider returned no models.",
+                            )
+                        }
+                    } else {
+                        val added = container.providers.importModels(id, ids)
+                        _state.update {
+                            it.copy(
+                                isFetchingModels = false,
+                                fetchResult = "Found ${ids.size} models, added $added new.",
+                            )
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isFetchingModels = false,
+                            fetchResult = error.message?.take(300)
+                                ?: "Could not fetch models.",
+                        )
+                    }
+                }
+        }
+    }
+
     private suspend fun persist(): Result<String> = runCatching {
         val current = _state.value
-        container.providers.save(
+        val id = container.providers.save(
             ProviderInput(
-                id = providerId,
+                id = savedId.value,
                 name = current.name,
                 baseUrl = current.baseUrl,
                 apiFormat = current.apiFormat,
@@ -176,5 +240,8 @@ class ProviderEditViewModel(
                 modelDisplayName = current.modelDisplayName,
             ),
         ).getOrThrow()
+        savedId.value = id
+        _state.update { it.copy(savedId = id) }
+        id
     }
 }

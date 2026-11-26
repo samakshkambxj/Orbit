@@ -33,9 +33,10 @@ class ProviderRepository(
             require(name.length <= 80) { "Provider name is too long." }
             val baseUrl = normalizeBaseUrl(input.baseUrl)
             val modelId = input.modelId.trim()
-            require(modelId.isNotEmpty()) { "Enter a model ID." }
-            require(modelId.none { it.isWhitespace() || it.isISOControl() }) {
-                "Model IDs cannot contain spaces or control characters."
+            if (modelId.isNotEmpty()) {
+                require(modelId.none { it.isWhitespace() || it.isISOControl() }) {
+                    "Model IDs cannot contain spaces or control characters."
+                }
             }
             val existing = input.id?.let { providerDao.get(it) }
             val id = existing?.id ?: UUID.randomUUID().toString()
@@ -56,15 +57,17 @@ class ProviderRepository(
                     updatedAt = now,
                 ),
             )
-            modelDao.upsert(
-                ModelEntity(
-                    id = "$id:$modelId",
-                    providerId = id,
-                    modelId = modelId,
-                    displayName = input.modelDisplayName.trim().ifBlank { modelId },
-                    enabled = true,
-                ),
-            )
+            if (modelId.isNotEmpty()) {
+                modelDao.upsert(
+                    ModelEntity(
+                        id = "$id:$modelId",
+                        providerId = id,
+                        modelId = modelId,
+                        displayName = input.modelDisplayName.trim().ifBlank { modelId },
+                        enabled = true,
+                    ),
+                )
+            }
             id
         }
     }
@@ -78,6 +81,24 @@ class ProviderRepository(
     suspend fun deleteModel(id: String) = withContext(Dispatchers.IO) {
         modelDao.delete(id)
     }
+
+    suspend fun importModels(providerId: String, ids: List<String>): Int =
+        withContext(Dispatchers.IO) {
+            val existing = modelDao.forProvider(providerId).map { it.modelId }.toSet()
+            val added = ids.filter { it !in existing }
+            added.forEach { modelId ->
+                modelDao.upsert(
+                    ModelEntity(
+                        id = "$providerId:$modelId",
+                        providerId = providerId,
+                        modelId = modelId,
+                        displayName = modelId,
+                        enabled = true,
+                    ),
+                )
+            }
+            added.size
+        }
 
     suspend fun configFor(id: String): ProviderConfig? {
         val provider = providerDao.get(id) ?: return null
