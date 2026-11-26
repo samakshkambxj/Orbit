@@ -57,4 +57,5 @@ app/src/main/java/com/orbit/app/
 - [x] Pinned chats
 - [x] Workspace browser and text editor
 - [x] Coding agent with workspace tools, approvals and diff previews
+- [x] Exact text edits and line-range reads for the agent
 - [ ] Git and terminal support

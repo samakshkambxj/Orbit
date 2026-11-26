@@ -3,6 +3,7 @@ package com.orbit.app.ui.chat
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.orbit.app.chat.applyTextEdit
 import com.orbit.app.chat.toolArgument
 import com.orbit.app.core.AppContainer
 import com.orbit.app.data.db.MessageEntity
@@ -148,6 +149,22 @@ class ChatViewModel(
                         oldText = null,
                         newText = toolArgument(call, "content").orEmpty(),
                     )
+                    "edit_file" -> {
+                        val current = if (path.isBlank()) {
+                            null
+                        } else {
+                            container.workspace.read(path).getOrNull()
+                        }
+                        val updated = current?.let { text ->
+                            applyTextEdit(
+                                content = text,
+                                oldText = toolArgument(call, "old_text").orEmpty(),
+                                newText = toolArgument(call, "new_text").orEmpty(),
+                                replaceAll = toolArgument(call, "replace_all") == "true",
+                            ).getOrNull()?.text
+                        }
+                        ToolPreview(call = call, oldText = current, newText = updated)
+                    }
                     "delete_path" -> ToolPreview(
                         call = call,
                         oldText = if (path.isBlank()) null else container.workspace.read(path).getOrNull(),

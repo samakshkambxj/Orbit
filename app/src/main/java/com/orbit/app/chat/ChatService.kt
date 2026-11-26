@@ -378,8 +378,11 @@ class ChatService(
         appendLine("Paths are relative to the workspace root. Never use absolute paths or '..'.")
         appendLine("Inspect files with list_files, read_file and search_files before editing.")
         appendLine(
-            "write_file, create_file, create_folder, delete_path and rename_path require the " +
-                "user's approval and may be denied.",
+            "Prefer edit_file for small changes; use write_file only to replace a whole file.",
+        )
+        appendLine(
+            "write_file, edit_file, create_file, create_folder, delete_path and rename_path " +
+                "require the user's approval and may be denied.",
         )
         appendLine("Keep changes focused and explain what changed when you are done.")
     }.trim()

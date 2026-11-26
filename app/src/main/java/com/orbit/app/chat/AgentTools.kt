@@ -7,8 +7,10 @@ import com.orbit.app.data.workspace.WorkspaceRepository
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -38,9 +40,11 @@ class AgentTools(
         ToolSpec(
             name = READ_FILE,
             description = "Read a UTF-8 text file from the workspace. " +
-                "Output is truncated when the file is very large.",
+                "Use start_line and max_lines for large files. Output is truncated when very large.",
             parameters = schema(
                 "path" to stringProperty("File path relative to the workspace root."),
+                "start_line" to integerProperty("First line to return, starting at 1."),
+                "max_lines" to integerProperty("Maximum number of lines to return."),
             ),
             required = listOf("path"),
         ),
@@ -62,6 +66,20 @@ class AgentTools(
                 "content" to stringProperty("New file contents."),
             ),
             required = listOf("path", "content"),
+        ),
+        ToolSpec(
+            name = EDIT_FILE,
+            description = "Replace an exact piece of text in an existing file. " +
+                "Prefer this over write_file for small changes. Requires approval.",
+            parameters = schema(
+                "path" to stringProperty("File path relative to the workspace root."),
+                "old_text" to stringProperty("Exact text to replace, including whitespace."),
+                "new_text" to stringProperty("Replacement text."),
+                "replace_all" to booleanProperty(
+                    "Replace every occurrence instead of requiring a unique match.",
+                ),
+            ),
+            required = listOf("path", "old_text", "new_text"),
         ),
         ToolSpec(
             name = CREATE_FILE,
@@ -109,7 +127,11 @@ class AgentTools(
         return runCatching {
             when (call.name) {
                 LIST_FILES -> listFiles(args.string("path").orEmpty())
-                READ_FILE -> readFile(requirePath(args))
+                READ_FILE -> readFile(
+                    path = requirePath(args),
+                    startLine = args.integer("start_line") ?: 1,
+                    maxLines = args.integer("max_lines") ?: DEFAULT_READ_LINES,
+                )
                 SEARCH_FILES -> searchFiles(
                     root = args.string("path").orEmpty(),
                     query = args.string("query")
@@ -118,6 +140,13 @@ class AgentTools(
                 WRITE_FILE -> writeFile(
                     path = requirePath(args),
                     content = args.string("content").orEmpty(),
+                )
+                EDIT_FILE -> editFile(
+                    path = requirePath(args),
+                    oldText = args.string("old_text")
+                        ?: error("The old_text argument is required."),
+                    newText = args.string("new_text").orEmpty(),
+                    replaceAll = args.boolean("replace_all") ?: false,
                 )
                 CREATE_FILE -> createFile(
                     path = requirePath(args),
@@ -149,12 +178,39 @@ class AgentTools(
         return ToolOutcome(text)
     }
 
-    private suspend fun readFile(path: String): ToolOutcome {
+    private suspend fun readFile(path: String, startLine: Int, maxLines: Int): ToolOutcome {
         val text = workspace.read(path).getOrThrow()
-        if (text.length <= MAX_OUTPUT_CHARS) return ToolOutcome(text)
+        if (text.isEmpty()) return ToolOutcome("The file is empty.")
+        val lines = text.lines()
+        val start = startLine.coerceAtLeast(1)
+        if (start > lines.size) {
+            error("start_line $start is past the end of the file (${lines.size} lines).")
+        }
+        val count = maxLines.coerceIn(1, MAX_READ_LINES)
+        val end = minOf(start + count - 1, lines.size)
+        var output = lines.subList(start - 1, end).joinToString("\n")
+        if (output.length > MAX_OUTPUT_CHARS) {
+            output = output.take(MAX_OUTPUT_CHARS) +
+                "\n\n[Truncated after $MAX_OUTPUT_CHARS characters. Read fewer lines.]"
+        } else if (end < lines.size) {
+            output += "\n\n[Showing lines $start–$end of ${lines.size}. " +
+                "Use start_line to read more.]"
+        }
+        return ToolOutcome(output)
+    }
+
+    private suspend fun editFile(
+        path: String,
+        oldText: String,
+        newText: String,
+        replaceAll: Boolean,
+    ): ToolOutcome {
+        val current = workspace.read(path).getOrThrow()
+        val result = applyTextEdit(current, oldText, newText, replaceAll).getOrThrow()
+        workspace.write(path, result.text).getOrThrow()
+        val count = result.replacements
         return ToolOutcome(
-            text.take(MAX_OUTPUT_CHARS) +
-                "\n\n[Truncated after $MAX_OUTPUT_CHARS characters. Read a smaller file or search instead.]",
+            "Replaced $count occurrence${if (count == 1) "" else "s"} in $path.",
         )
     }
 
@@ -244,6 +300,12 @@ class AgentTools(
     private fun JsonObject.string(name: String): String? =
         (this[name] as? JsonPrimitive)?.contentOrNull
 
+    private fun JsonObject.integer(name: String): Int? =
+        (this[name] as? JsonPrimitive)?.intOrNull
+
+    private fun JsonObject.boolean(name: String): Boolean? =
+        (this[name] as? JsonPrimitive)?.booleanOrNull
+
     private fun schema(vararg properties: Pair<String, JsonObject>): JsonObject = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -257,6 +319,16 @@ class AgentTools(
         put("description", description)
     }
 
+    private fun integerProperty(description: String): JsonObject = buildJsonObject {
+        put("type", "integer")
+        put("description", description)
+    }
+
+    private fun booleanProperty(description: String): JsonObject = buildJsonObject {
+        put("type", "boolean")
+        put("description", description)
+    }
+
     private class SearchBudget(var files: Int)
 
     companion object {
@@ -264,6 +336,7 @@ class AgentTools(
         const val READ_FILE = "read_file"
         const val SEARCH_FILES = "search_files"
         const val WRITE_FILE = "write_file"
+        const val EDIT_FILE = "edit_file"
         const val CREATE_FILE = "create_file"
         const val CREATE_FOLDER = "create_folder"
         const val DELETE_PATH = "delete_path"
@@ -271,6 +344,7 @@ class AgentTools(
 
         private val MUTATING_TOOLS = setOf(
             WRITE_FILE,
+            EDIT_FILE,
             CREATE_FILE,
             CREATE_FOLDER,
             DELETE_PATH,
@@ -278,6 +352,8 @@ class AgentTools(
         )
 
         private const val MAX_OUTPUT_CHARS = 40_000
+        private const val DEFAULT_READ_LINES = 400
+        private const val MAX_READ_LINES = 2_000
         private const val MAX_LIST_ENTRIES = 500
         private const val MAX_MATCHES = 40
         private const val MAX_SEARCH_FILES = 120
