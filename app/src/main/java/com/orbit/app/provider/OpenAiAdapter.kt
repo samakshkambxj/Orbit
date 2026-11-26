@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -117,7 +118,33 @@ class OpenAiAdapter(
                     add(
                         buildJsonObject {
                             put("role", normalizeRole(turn.role))
-                            put("content", turn.content)
+                            if (turn.images.isEmpty()) {
+                                put("content", turn.content)
+                            } else {
+                                putJsonArray("content") {
+                                    if (turn.content.isNotBlank()) {
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "text")
+                                                put("text", turn.content)
+                                            },
+                                        )
+                                    }
+                                    turn.images.forEach { image ->
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "image_url")
+                                                putJsonObject("image_url") {
+                                                    put(
+                                                        "url",
+                                                        "data:${image.mediaType};base64,${image.data}",
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         },
                     )
                 }

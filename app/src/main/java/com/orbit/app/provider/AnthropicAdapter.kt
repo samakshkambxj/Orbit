@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -113,11 +114,36 @@ class AnthropicAdapter(
             request.temperature?.let { put("temperature", it) }
             if (system.isNotEmpty()) put("system", system)
             putJsonArray("messages") {
-                messages.forEach { (role, content) ->
+                messages.forEach { turn ->
                     add(
                         buildJsonObject {
-                            put("role", role)
-                            put("content", content)
+                            put("role", turn.role)
+                            if (turn.images.isEmpty()) {
+                                put("content", turn.content)
+                            } else {
+                                putJsonArray("content") {
+                                    turn.images.forEach { image ->
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "image")
+                                                putJsonObject("source") {
+                                                    put("type", "base64")
+                                                    put("media_type", image.mediaType)
+                                                    put("data", image.data)
+                                                }
+                                            },
+                                        )
+                                    }
+                                    if (turn.content.isNotBlank()) {
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "text")
+                                                put("text", turn.content)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         },
                     )
                 }
@@ -135,19 +161,24 @@ class AnthropicAdapter(
         return builder.build()
     }
 
-    private fun mergeConversation(turns: List<ChatTurn>): List<Pair<String, String>> {
-        val merged = mutableListOf<Pair<String, String>>()
+    private fun mergeConversation(turns: List<ChatTurn>): List<ChatTurn> {
+        val merged = mutableListOf<ChatTurn>()
         turns.forEach { turn ->
             val role = turn.role.lowercase()
             if (role != "user" && role != "assistant") return@forEach
             val last = merged.lastOrNull()
-            if (last != null && last.first == role) {
-                merged[merged.lastIndex] = role to (last.second + "\n\n" + turn.content)
+            if (last != null && last.role == role) {
+                merged[merged.lastIndex] = last.copy(
+                    content = listOf(last.content, turn.content)
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n\n"),
+                    images = last.images + turn.images,
+                )
             } else {
-                merged += role to turn.content
+                merged += ChatTurn(role = role, content = turn.content, images = turn.images)
             }
         }
-        while (merged.isNotEmpty() && merged.first().first != "user") merged.removeAt(0)
+        while (merged.isNotEmpty() && merged.first().role != "user") merged.removeAt(0)
         return merged
     }
 

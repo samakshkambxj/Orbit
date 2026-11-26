@@ -44,9 +44,15 @@ data class ModelInfo(
     val displayName: String,
 )
 
+data class ChatImage(
+    val data: String,
+    val mediaType: String = "image/jpeg",
+)
+
 data class ChatTurn(
     val role: String,
     val content: String,
+    val images: List<ChatImage> = emptyList(),
 )
 
 data class ChatRequest(

@@ -71,6 +71,8 @@ data class MessageEntity(
     val conversationId: String,
     val role: String,
     val content: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val attachments: String = "",
     val status: String = "COMPLETE",
     val error: String? = null,
     val createdAt: Long,
@@ -189,7 +191,7 @@ interface MessageDao {
         MessageEntity::class,
         AssistantEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class OrbitDatabase : RoomDatabase() {
@@ -223,9 +225,17 @@ abstract class OrbitDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN attachments TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
         fun build(context: Context): OrbitDatabase =
             Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

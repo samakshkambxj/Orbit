@@ -71,6 +71,7 @@ class ConversationRepository(
         conversationId: String,
         role: String,
         content: String,
+        attachments: String = "",
         status: String = "COMPLETE",
         error: String? = null,
     ): MessageEntity {
@@ -79,6 +80,7 @@ class ConversationRepository(
             conversationId = conversationId,
             role = role,
             content = content,
+            attachments = attachments,
             status = status,
             error = error,
             createdAt = System.currentTimeMillis(),

@@ -2,6 +2,7 @@ package com.orbit.app.core
 
 import android.content.Context
 import com.orbit.app.chat.ChatService
+import com.orbit.app.core.media.ImageStore
 import com.orbit.app.core.security.SecretStore
 import com.orbit.app.data.db.OrbitDatabase
 import com.orbit.app.data.prefs.SettingsRepository
@@ -35,6 +36,7 @@ class AppContainer(context: Context) {
     val database: OrbitDatabase by lazy { OrbitDatabase.build(appContext) }
     val settings: SettingsRepository by lazy { SettingsRepository(appContext) }
     val secrets: SecretStore by lazy { SecretStore(appContext) }
+    val images: ImageStore by lazy { ImageStore(appContext) }
     val providers: ProviderRepository by lazy {
         ProviderRepository(database.providerDao(), database.modelDao(), secrets)
     }

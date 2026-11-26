@@ -1,5 +1,7 @@
 package com.orbit.app.chat
 
+import android.util.Base64
+import com.orbit.app.data.model.ChatImage
 import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.MessageStatus
@@ -8,6 +10,7 @@ import com.orbit.app.provider.ProviderEngine
 import com.orbit.app.provider.ProviderEvent
 import com.orbit.app.provider.ProviderErrors
 import com.orbit.app.provider.ProviderRepository
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -37,11 +40,12 @@ class ChatService(
 
     fun isActive(conversationId: String): Boolean = jobs[conversationId]?.isActive == true
 
-    fun send(conversationId: String, text: String) {
+    fun send(conversationId: String, text: String, imagePaths: List<String> = emptyList()) {
         val clean = text.trim()
-        if (clean.isEmpty() || clean.length > MAX_MESSAGE_CHARS) return
+        val images = imagePaths.filter { it.isNotBlank() }.take(MAX_IMAGES)
+        if ((clean.isEmpty() && images.isEmpty()) || clean.length > MAX_MESSAGE_CHARS) return
         if (isActive(conversationId)) return
-        launchGeneration(conversationId) { generate(conversationId, clean) }
+        launchGeneration(conversationId) { generate(conversationId, clean, images) }
     }
 
     fun retry(conversationId: String) {
@@ -79,15 +83,21 @@ class ChatService(
         job.start()
     }
 
-    private suspend fun generate(conversationId: String, userText: String) {
+    private suspend fun generate(
+        conversationId: String,
+        userText: String,
+        imagePaths: List<String>,
+    ) {
         val conversation = conversations.get(conversationId) ?: return
         conversations.appendMessage(
             conversationId = conversationId,
             role = "user",
             content = userText,
+            attachments = imagePaths.joinToString("\n"),
         )
         if (conversation.title == "New chat") {
             val title = userText.lineSequence().firstOrNull().orEmpty().trim().take(64)
+                .ifBlank { if (imagePaths.isEmpty()) "" else "Image" }
             if (title.isNotEmpty()) conversations.rename(conversationId, title)
         }
         respond(conversationId)
@@ -122,8 +132,17 @@ class ChatService(
 
         val history = conversations.messages(conversationId, MAX_HISTORY_MESSAGES)
             .filter { it.id != assistant.id }
-            .filter { it.status != MessageStatus.ERROR.name && it.content.isNotBlank() }
-            .map { ChatTurn(it.role, it.content) }
+            .filter {
+                it.status != MessageStatus.ERROR.name &&
+                    (it.content.isNotBlank() || it.attachments.isNotBlank())
+            }
+            .map {
+                ChatTurn(
+                    role = it.role,
+                    content = it.content,
+                    images = loadImages(it.attachments),
+                )
+            }
         val turns = buildList {
             add(ChatTurn("system", conversation.systemPrompt.ifBlank { SYSTEM_PROMPT }))
             addAll(history)
@@ -199,6 +218,23 @@ class ChatService(
         }
     }
 
+    private fun loadImages(attachments: String): List<ChatImage> {
+        if (attachments.isBlank()) return emptyList()
+        return attachments.lineSequence()
+            .filter { it.isNotBlank() }
+            .mapNotNull { path ->
+                runCatching {
+                    val file = File(path)
+                    if (!file.isFile) return@runCatching null
+                    ChatImage(
+                        data = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP),
+                        mediaType = "image/jpeg",
+                    )
+                }.getOrNull()
+            }
+            .toList()
+    }
+
     private suspend fun appendError(conversationId: String, message: String) {
         withContext(NonCancellable) {
             runCatching {
@@ -216,6 +252,7 @@ class ChatService(
     private companion object {
         const val MAX_MESSAGE_CHARS = 120_000
         const val MAX_HISTORY_MESSAGES = 60
+        const val MAX_IMAGES = 4
         const val STREAM_PERSIST_INTERVAL_MS = 150L
         const val SYSTEM_PROMPT =
             "You are ORBIT, a concise and capable AI assistant. Use fenced code blocks with a language tag for code. " +
