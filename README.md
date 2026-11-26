@@ -52,4 +52,7 @@ app/src/main/java/com/orbit/app/
 - [x] Streaming responses with persistence
 - [x] Chat search, assistant presets and per-chat prompts
 - [x] Image attachments and multiple models per provider
-- [ ] Workspace, editor, coding agent, Git and terminal
+- [x] Provider model discovery and message editing
+- [x] Workspace browser and text editor
+- [x] Coding agent with workspace tools, approvals and diff previews
+- [ ] Git and terminal support

@@ -1,5 +1,29 @@
 # ORBIT progress
 
+## 2026-11-26 — workspace and coding agent
+
+- Added a Workspace tab backed by the Storage Access Framework: pick a folder,
+  browse it with breadcrumbs, and create, rename, delete and edit text files.
+- Added a coding agent that can list, read and search workspace files, and
+  write, create, rename or delete them after explicit approval.
+- Added streaming tool calls for OpenAI-compatible and Anthropic providers,
+  including tool result messages and a bounded multi-step loop.
+- Added approval cards with line-level diff previews before edits are applied.
+- Added provider model discovery, so model IDs can be imported instead of typed.
+- Added message editing: edit a sent message to regenerate the conversation
+  from that point.
+
+### Status
+
+- Feature commits: `f3e4994`, `8e31b59`, `66edd99`, `ae78bd7`, `635ab75`.
+- CI: green on every push.
+
+### Next
+
+1. Git status, diff and commit support for the workspace.
+2. A terminal runner with explicit approval for commands.
+3. Voice input and richer export options.
+
 ## 2026-11-26 — images and model management
 
 - Added image attachments: picker, downscaling into app storage, multimodal
