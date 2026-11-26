@@ -85,6 +85,11 @@ class ChatService(
         launchGeneration(conversationId) { resolveToolCalls(conversationId, approved = true) }
     }
 
+    fun continueGeneration(conversationId: String) {
+        if (isActive(conversationId)) return
+        launchGeneration(conversationId) { respond(conversationId) }
+    }
+
     fun denyToolCalls(conversationId: String) {
         if (isActive(conversationId)) return
         launchGeneration(conversationId) { resolveToolCalls(conversationId, approved = false) }

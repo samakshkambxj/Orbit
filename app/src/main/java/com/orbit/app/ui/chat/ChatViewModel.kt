@@ -186,6 +186,10 @@ class ChatViewModel(
         container.chat.denyToolCalls(conversationId)
     }
 
+    fun continueGeneration() {
+        container.chat.continueGeneration(conversationId)
+    }
+
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
             container.chat.stop(conversationId)

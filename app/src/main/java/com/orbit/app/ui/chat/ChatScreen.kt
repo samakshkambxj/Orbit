@@ -151,6 +151,8 @@ fun ChatScreen(
         viewModel.loadToolPreviews(pendingCalls)
     }
     val agentNeedsWorkspace = conversation?.agentEnabled == true && workspace == null
+    val needsContinue = !isGenerating && pendingApproval == null &&
+        messages.lastOrNull()?.role == "tool"
     val listState = rememberLazyListState()
 
     LaunchedEffect(
@@ -359,6 +361,27 @@ fun ChatScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = onOpenWorkspace) { Text("Open") }
+                        }
+                    }
+                }
+                if (needsContinue) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "The agent paused after a tool call.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = viewModel::continueGeneration) {
+                                Text("Continue")
+                            }
                         }
                     }
                 }

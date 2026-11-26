@@ -10,6 +10,7 @@
   including tool result messages and a bounded multi-step loop.
 - Added approval cards with line-level diff previews before edits are applied.
 - Added exact search-and-replace edits and line-range reads for the agent.
+- Added a continue action when a tool step is interrupted.
 - Added provider model discovery, so model IDs can be imported instead of typed.
 - Added message editing: edit a sent message to regenerate the conversation
   from that point.
