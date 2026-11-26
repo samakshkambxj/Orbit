@@ -3,6 +3,7 @@ package com.orbit.app.provider
 import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.ProviderConfig
+import com.orbit.app.data.model.ToolCall
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -14,11 +15,13 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -74,13 +77,16 @@ class AnthropicAdapter(
                         return
                     }
                     val reader = SseReader()
+                    val toolState = ToolState()
                     try {
                         while (true) {
                             val line = source.readUtf8Line() ?: break
                             val payload = reader.accept(line) ?: continue
-                            parseDelta(payload).forEach { trySend(it) }
+                            parseDelta(payload, toolState).forEach { trySend(it) }
                         }
-                        reader.flush()?.let { payload -> parseDelta(payload).forEach { trySend(it) } }
+                        reader.flush()?.let { payload ->
+                            parseDelta(payload, toolState).forEach { trySend(it) }
+                        }
                         close()
                     } catch (error: Throwable) {
                         close(error as? ProviderException ?: ProviderErrors.fromIo(IOException(error)))
@@ -106,7 +112,7 @@ class AnthropicAdapter(
             .filter { it.role.equals("system", ignoreCase = true) }
             .joinToString("\n\n") { it.content }
             .trim()
-        val messages = mergeConversation(request.turns)
+        val messages = mergeMessages(request.turns)
         val body = buildJsonObject {
             put("model", request.model)
             put("max_tokens", request.maxTokens.coerceIn(1, 131_072))
@@ -114,38 +120,28 @@ class AnthropicAdapter(
             request.temperature?.let { put("temperature", it) }
             if (system.isNotEmpty()) put("system", system)
             putJsonArray("messages") {
-                messages.forEach { turn ->
+                messages.forEach { message ->
                     add(
                         buildJsonObject {
-                            put("role", turn.role)
-                            if (turn.images.isEmpty()) {
-                                put("content", turn.content)
-                            } else {
-                                putJsonArray("content") {
-                                    turn.images.forEach { image ->
-                                        add(
-                                            buildJsonObject {
-                                                put("type", "image")
-                                                putJsonObject("source") {
-                                                    put("type", "base64")
-                                                    put("media_type", image.mediaType)
-                                                    put("data", image.data)
-                                                }
-                                            },
-                                        )
-                                    }
-                                    if (turn.content.isNotBlank()) {
-                                        add(
-                                            buildJsonObject {
-                                                put("type", "text")
-                                                put("text", turn.content)
-                                            },
-                                        )
-                                    }
-                                }
+                            put("role", message.role)
+                            putJsonArray("content") {
+                                message.blocks.forEach { block -> add(block) }
                             }
                         },
                     )
+                }
+            }
+            if (request.tools.isNotEmpty()) {
+                putJsonArray("tools") {
+                    request.tools.forEach { tool ->
+                        add(
+                            buildJsonObject {
+                                put("name", tool.name)
+                                put("description", tool.description)
+                                put("input_schema", tool.asJsonSchema())
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -161,31 +157,111 @@ class AnthropicAdapter(
         return builder.build()
     }
 
-    private fun mergeConversation(turns: List<ChatTurn>): List<ChatTurn> {
-        val merged = mutableListOf<ChatTurn>()
+    private data class AnthropicMessage(
+        val role: String,
+        val blocks: List<JsonObject>,
+    )
+
+    private fun mergeMessages(turns: List<ChatTurn>): List<AnthropicMessage> {
+        val merged = mutableListOf<AnthropicMessage>()
         turns.forEach { turn ->
-            val role = turn.role.lowercase()
-            if (role != "user" && role != "assistant") return@forEach
-            val last = merged.lastOrNull()
-            if (last != null && last.role == role) {
-                merged[merged.lastIndex] = last.copy(
-                    content = listOf(last.content, turn.content)
-                        .filter { it.isNotBlank() }
-                        .joinToString("\n\n"),
-                    images = last.images + turn.images,
+            val message = when (turn.role.lowercase()) {
+                "user" -> AnthropicMessage("user", userBlocks(turn))
+                "assistant" -> AnthropicMessage("assistant", assistantBlocks(turn))
+                "tool" -> AnthropicMessage(
+                    role = "user",
+                    blocks = listOf(
+                        buildJsonObject {
+                            put("type", "tool_result")
+                            put("tool_use_id", turn.toolCallId)
+                            put("content", turn.content)
+                            if (turn.toolError) put("is_error", true)
+                        },
+                    ),
                 )
+                else -> return@forEach
+            }
+            if (message.blocks.isEmpty()) return@forEach
+            val last = merged.lastOrNull()
+            if (last != null && last.role == message.role) {
+                merged[merged.lastIndex] = last.copy(blocks = last.blocks + message.blocks)
             } else {
-                merged += ChatTurn(role = role, content = turn.content, images = turn.images)
+                merged += message
             }
         }
         while (merged.isNotEmpty() && merged.first().role != "user") merged.removeAt(0)
         return merged
     }
 
-    private fun parseDelta(payload: String): List<ProviderEvent> {
+    private fun userBlocks(turn: ChatTurn): List<JsonObject> = buildList {
+        turn.images.forEach { image ->
+            add(
+                buildJsonObject {
+                    put("type", "image")
+                    putJsonObject("source") {
+                        put("type", "base64")
+                        put("media_type", image.mediaType)
+                        put("data", image.data)
+                    }
+                },
+            )
+        }
+        if (turn.content.isNotBlank()) {
+            add(
+                buildJsonObject {
+                    put("type", "text")
+                    put("text", turn.content)
+                },
+            )
+        }
+    }
+
+    private fun assistantBlocks(turn: ChatTurn): List<JsonObject> = buildList {
+        if (turn.content.isNotBlank()) {
+            add(
+                buildJsonObject {
+                    put("type", "text")
+                    put("text", turn.content)
+                },
+            )
+        }
+        turn.toolCalls.forEach { call ->
+            add(
+                buildJsonObject {
+                    put("type", "tool_use")
+                    put("id", call.id)
+                    put("name", call.name)
+                    put(
+                        "input",
+                        runCatching { json.parseToJsonElement(call.arguments) }
+                            .getOrElse { buildJsonObject {} },
+                    )
+                },
+            )
+        }
+    }
+
+    private fun parseDelta(
+        payload: String,
+        toolState: ToolState,
+    ): List<ProviderEvent> {
         val root = runCatching { json.parseToJsonElement(payload).jsonObject }.getOrNull()
             ?: return emptyList()
+        val index = root["index"]?.let {
+            runCatching { it.jsonPrimitive.content.toInt() }.getOrNull()
+        } ?: 0
         return when (root["type"].textOrNull()) {
+            "content_block_start" -> {
+                val block = root["content_block"]?.let { runCatching { it.jsonObject }.getOrNull() }
+                if (block?.get("type").textOrNull() == "tool_use") {
+                    toolState.start(
+                        index = index,
+                        id = block["id"].textOrNull().orEmpty(),
+                        name = block["name"].textOrNull().orEmpty(),
+                    )
+                }
+                emptyList()
+            }
             "content_block_delta" -> {
                 val delta = root["delta"]?.let { runCatching { it.jsonObject }.getOrNull() }
                 when (delta?.get("type").textOrNull()) {
@@ -193,9 +269,18 @@ class AnthropicAdapter(
                         ?.takeIf { it.isNotEmpty() }
                         ?.let { listOf(ProviderEvent.Text(it)) }
                         .orEmpty()
+                    "input_json_delta" -> {
+                        delta?.get("partial_json").textOrNull()?.let {
+                            toolState.append(index, it)
+                        }
+                        emptyList()
+                    }
                     else -> emptyList()
                 }
             }
+            "content_block_stop" -> toolState.stop(index)
+                ?.let { listOf(ProviderEvent.ToolCallReady(it)) }
+                .orEmpty()
             "message_delta" -> {
                 val reason = root["delta"]?.let { runCatching { it.jsonObject }.getOrNull() }
                     ?.get("stop_reason").textOrNull()
@@ -211,6 +296,33 @@ class AnthropicAdapter(
                 )
             }
             else -> emptyList()
+        }
+    }
+
+    private class ToolState {
+        private data class Block(
+            val id: String,
+            val name: String,
+            val json: StringBuilder = StringBuilder(),
+        )
+
+        private val blocks = mutableMapOf<Int, Block>()
+
+        fun start(index: Int, id: String, name: String) {
+            if (name.isNotBlank()) blocks[index] = Block(id, name)
+        }
+
+        fun append(index: Int, partial: String) {
+            blocks[index]?.json?.append(partial)
+        }
+
+        fun stop(index: Int): ToolCall? {
+            val block = blocks.remove(index) ?: return null
+            return ToolCall(
+                id = block.id.ifBlank { "tool_${java.util.UUID.randomUUID()}" },
+                name = block.name,
+                arguments = block.json.toString().ifBlank { "{}" },
+            )
         }
     }
 

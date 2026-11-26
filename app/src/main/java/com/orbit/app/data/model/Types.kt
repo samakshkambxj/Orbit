@@ -1,5 +1,7 @@
 package com.orbit.app.data.model
 
+import kotlinx.serialization.Serializable
+
 enum class ApiFormat {
     OPENAI,
     ANTHROPIC;
@@ -13,7 +15,7 @@ enum class ApiFormat {
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class MessageStatus { COMPLETE, STREAMING, ERROR, CANCELLED }
+enum class MessageStatus { COMPLETE, STREAMING, AWAITING_APPROVAL, ERROR, CANCELLED }
 
 data class ProviderConfig(
     val id: String,
@@ -49,10 +51,28 @@ data class ChatImage(
     val mediaType: String = "image/jpeg",
 )
 
+@Serializable
+data class ToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String = "{}",
+)
+
+data class ToolSpec(
+    val name: String,
+    val description: String,
+    val parameters: kotlinx.serialization.json.JsonObject,
+    val required: List<String> = emptyList(),
+)
+
 data class ChatTurn(
     val role: String,
     val content: String,
     val images: List<ChatImage> = emptyList(),
+    val toolCalls: List<ToolCall> = emptyList(),
+    val toolCallId: String = "",
+    val toolName: String = "",
+    val toolError: Boolean = false,
 )
 
 data class ChatRequest(
@@ -61,4 +81,5 @@ data class ChatRequest(
     val maxTokens: Int = 4096,
     val temperature: Double? = null,
     val stream: Boolean = true,
+    val tools: List<ToolSpec> = emptyList(),
 )

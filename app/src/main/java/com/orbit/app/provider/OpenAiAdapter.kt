@@ -1,7 +1,9 @@
 package com.orbit.app.provider
 
 import com.orbit.app.data.model.ChatRequest
+import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.ProviderConfig
+import com.orbit.app.data.model.ToolCall
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -73,20 +76,27 @@ class OpenAiAdapter(
                         return
                     }
                     val reader = SseReader()
+                    val toolCalls = ToolCallAccumulator()
                     try {
                         while (true) {
                             val line = source.readUtf8Line() ?: break
                             val payload = reader.accept(line) ?: continue
                             if (payload == "[DONE]") {
+                                toolCalls.drain().forEach {
+                                    trySend(ProviderEvent.ToolCallReady(it))
+                                }
                                 trySend(ProviderEvent.Finished(null))
                                 close()
                                 return
                             }
-                            parseDelta(payload).forEach { trySend(it) }
+                            parseDelta(payload, toolCalls).forEach { trySend(it) }
                         }
                         reader.flush()?.let { payload ->
-                            if (payload != "[DONE]") parseDelta(payload).forEach { trySend(it) }
+                            if (payload != "[DONE]") {
+                                parseDelta(payload, toolCalls).forEach { trySend(it) }
+                            }
                         }
+                        toolCalls.drain().forEach { trySend(ProviderEvent.ToolCallReady(it)) }
                         close()
                     } catch (error: Throwable) {
                         close(error as? ProviderException ?: ProviderErrors.fromIo(IOException(error)))
@@ -117,36 +127,75 @@ class OpenAiAdapter(
                 request.turns.forEach { turn ->
                     add(
                         buildJsonObject {
-                            put("role", normalizeRole(turn.role))
-                            if (turn.images.isEmpty()) {
-                                put("content", turn.content)
-                            } else {
-                                putJsonArray("content") {
-                                    if (turn.content.isNotBlank()) {
-                                        add(
-                                            buildJsonObject {
-                                                put("type", "text")
-                                                put("text", turn.content)
-                                            },
-                                        )
+                            val role = normalizeRole(turn.role)
+                            put("role", role)
+                            when {
+                                role == "tool" -> {
+                                    put("tool_call_id", turn.toolCallId)
+                                    put("content", turn.content)
+                                }
+                                turn.toolCalls.isNotEmpty() -> {
+                                    put("content", turn.content)
+                                    putJsonArray("tool_calls") {
+                                        turn.toolCalls.forEach { call ->
+                                            add(
+                                                buildJsonObject {
+                                                    put("id", call.id)
+                                                    put("type", "function")
+                                                    putJsonObject("function") {
+                                                        put("name", call.name)
+                                                        put("arguments", call.arguments)
+                                                    }
+                                                },
+                                            )
+                                        }
                                     }
-                                    turn.images.forEach { image ->
-                                        add(
-                                            buildJsonObject {
-                                                put("type", "image_url")
-                                                putJsonObject("image_url") {
-                                                    put(
-                                                        "url",
-                                                        "data:${image.mediaType};base64,${image.data}",
-                                                    )
-                                                }
-                                            },
-                                        )
+                                }
+                                turn.images.isEmpty() -> put("content", turn.content)
+                                else -> {
+                                    putJsonArray("content") {
+                                        if (turn.content.isNotBlank()) {
+                                            add(
+                                                buildJsonObject {
+                                                    put("type", "text")
+                                                    put("text", turn.content)
+                                                },
+                                            )
+                                        }
+                                        turn.images.forEach { image ->
+                                            add(
+                                                buildJsonObject {
+                                                    put("type", "image_url")
+                                                    putJsonObject("image_url") {
+                                                        put(
+                                                            "url",
+                                                            "data:${image.mediaType};base64,${image.data}",
+                                                        )
+                                                    }
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
                         },
                     )
+                }
+            }
+            if (request.tools.isNotEmpty()) {
+                putJsonArray("tools") {
+                    request.tools.forEach { tool ->
+                        add(
+                            buildJsonObject {
+                                put("type", "function")
+                                putJsonObject("function") {
+                                    put("name", tool.name)
+                                    put("description", tool.description)
+                                    put("parameters", tool.asJsonSchema())
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -161,7 +210,10 @@ class OpenAiAdapter(
         return builder.build()
     }
 
-    private fun parseDelta(payload: String): List<ProviderEvent> {
+    private fun parseDelta(
+        payload: String,
+        toolCalls: ToolCallAccumulator,
+    ): List<ProviderEvent> {
         if (payload == "[DONE]") return listOf(ProviderEvent.Finished(null))
         val root = runCatching { json.parseToJsonElement(payload).jsonObject }.getOrNull()
             ?: return emptyList()
@@ -170,11 +222,15 @@ class OpenAiAdapter(
             runCatching { element.jsonArray.firstOrNull()?.jsonObject }.getOrNull()
         } ?: return emptyList()
         val delta = choice["delta"]?.let { runCatching { it.jsonObject }.getOrNull() }
+        delta?.let(toolCalls::add)
         val text = contentText(delta?.get("content"))
         val finish = choice["finish_reason"].textOrNull()
         val events = mutableListOf<ProviderEvent>()
         if (text.isNotEmpty()) events += ProviderEvent.Text(text)
-        if (!finish.isNullOrBlank()) events += ProviderEvent.Finished(finish)
+        if (!finish.isNullOrBlank()) {
+            toolCalls.drain().forEach { events += ProviderEvent.ToolCallReady(it) }
+            events += ProviderEvent.Finished(finish)
+        }
         return events
     }
 
@@ -202,8 +258,57 @@ class OpenAiAdapter(
     }
 
     private fun normalizeRole(role: String): String = when (role.lowercase()) {
-        "system", "user", "assistant" -> role.lowercase()
+        "system", "user", "assistant", "tool" -> role.lowercase()
         else -> "user"
+    }
+
+    private class ToolCallAccumulator {
+        private data class Part(
+            var id: String = "",
+            var name: String = "",
+            val arguments: StringBuilder = StringBuilder(),
+        )
+
+        private val parts = sortedMapOf<Int, Part>()
+
+        fun add(delta: kotlinx.serialization.json.JsonObject) {
+            val array = delta["tool_calls"]
+                ?.let { runCatching { it.jsonArray }.getOrNull() }
+                ?: return
+            array.forEach { item ->
+                val obj = runCatching { item.jsonObject }.getOrNull() ?: return@forEach
+                val index = obj["index"]
+                    ?.let { runCatching { it.jsonPrimitive.content.toInt() }.getOrNull() }
+                    ?: 0
+                val part = parts.getOrPut(index) { Part() }
+                obj["id"]?.textOrNull()?.takeIf { it.isNotBlank() }?.let { part.id = it }
+                val function = obj["function"]
+                    ?.let { runCatching { it.jsonObject }.getOrNull() }
+                function?.get("name")?.textOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { part.name = it }
+                function?.get("arguments")?.textOrNull()?.let { part.arguments.append(it) }
+            }
+        }
+
+        fun drain(): List<ToolCall> {
+            val calls = parts.values
+                .filter { it.name.isNotBlank() }
+                .map { part ->
+                    ToolCall(
+                        id = part.id.ifBlank { "call_${java.util.UUID.randomUUID()}" },
+                        name = part.name,
+                        arguments = part.arguments.toString().ifBlank { "{}" },
+                    )
+                }
+            parts.clear()
+            return calls
+        }
+
+        private fun JsonElement?.textOrNull(): String? = when (this) {
+            is JsonPrimitive -> contentOrNull
+            else -> null
+        }
     }
 
     private fun clientFor(config: ProviderConfig): OkHttpClient =

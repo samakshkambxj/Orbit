@@ -1,11 +1,19 @@
 package com.orbit.app.provider
 
+import com.orbit.app.data.model.ToolCall
+import com.orbit.app.data.model.ToolSpec
 import java.io.IOException
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
 sealed interface ProviderEvent {
     data class Text(val value: String) : ProviderEvent
+    data class ToolCallReady(val call: ToolCall) : ProviderEvent
     data class Finished(val reason: String?) : ProviderEvent
 }
 
@@ -86,6 +94,13 @@ object ProviderErrors {
             ProviderErrorKind.INVALID_REQUEST,
             if (detail.isBlank()) "The provider returned an error." else "Provider error: $detail",
         )
+    }
+}
+
+internal fun ToolSpec.asJsonSchema(): JsonObject = buildJsonObject {
+    parameters.forEach { (key, value) -> put(key, value) }
+    if (required.isNotEmpty()) {
+        putJsonArray("required") { required.forEach { add(JsonPrimitive(it)) } }
     }
 }
 
