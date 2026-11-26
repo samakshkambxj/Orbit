@@ -52,6 +52,10 @@ import com.orbit.app.ui.components.ConfirmDialog
 import com.orbit.app.ui.components.EmptyState
 import com.orbit.app.ui.components.RenameChatDialog
 import com.orbit.app.ui.orbitViewModel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +85,7 @@ fun ChatListScreen(
             }
         }
     }
+    val groups = remember(filtered) { groupConversations(filtered) }
 
     Scaffold(
         topBar = {
@@ -199,16 +204,30 @@ fun ChatListScreen(
                             .weight(1f)
                             .fillMaxWidth(),
                     ) {
-                        items(filtered, key = { it.id }) { conversation ->
-                            ChatRow(
-                                conversation = conversation,
-                                modelName = modelNames[
-                                    modelKey(conversation.providerId, conversation.modelId)
-                                ],
-                                onOpen = { onOpenChat(conversation.id) },
-                                onRename = { renameTarget = conversation },
-                                onDelete = { deleteTarget = conversation },
-                            )
+                        groups.forEach { group ->
+                            item(key = "header-${group.label}") {
+                                Text(
+                                    text = group.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(
+                                        start = 8.dp,
+                                        top = 12.dp,
+                                        bottom = 4.dp,
+                                    ),
+                                )
+                            }
+                            items(group.items, key = { it.id }) { conversation ->
+                                ChatRow(
+                                    conversation = conversation,
+                                    modelName = modelNames[
+                                        modelKey(conversation.providerId, conversation.modelId)
+                                    ],
+                                    onOpen = { onOpenChat(conversation.id) },
+                                    onRename = { renameTarget = conversation },
+                                    onDelete = { deleteTarget = conversation },
+                                )
+                            }
                         }
                     }
                 }
@@ -326,6 +345,29 @@ private fun ChatRow(
             modifier = Modifier.padding(start = 8.dp),
         )
     }
+}
+
+private data class ChatGroup(
+    val label: String,
+    val items: List<ConversationEntity>,
+)
+
+private fun groupConversations(conversations: List<ConversationEntity>): List<ChatGroup> {
+    val zone = ZoneId.systemDefault()
+    val today = LocalDate.now(zone)
+    val grouped = LinkedHashMap<String, MutableList<ConversationEntity>>()
+    conversations.forEach { conversation ->
+        val date = Instant.ofEpochMilli(conversation.updatedAt).atZone(zone).toLocalDate()
+        val days = ChronoUnit.DAYS.between(date, today)
+        val label = when {
+            days <= 0L -> "Today"
+            days == 1L -> "Yesterday"
+            days <= 7L -> "Previous 7 days"
+            else -> "Older"
+        }
+        grouped.getOrPut(label) { mutableListOf() } += conversation
+    }
+    return grouped.map { (label, items) -> ChatGroup(label, items) }
 }
 
 private fun modelKey(providerId: String, modelId: String): String = "$providerId:$modelId"

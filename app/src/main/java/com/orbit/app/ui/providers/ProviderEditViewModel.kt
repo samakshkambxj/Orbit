@@ -7,6 +7,7 @@ import com.orbit.app.data.model.ApiFormat
 import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.ProviderInput
+import com.orbit.app.provider.ProviderPreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -64,6 +65,19 @@ class ProviderEditViewModel(
     fun setApiKey(value: String) = _state.update { it.copy(apiKey = value, error = null) }
     fun setModelId(value: String) = _state.update { it.copy(modelId = value, error = null) }
     fun setModelDisplayName(value: String) = _state.update { it.copy(modelDisplayName = value, error = null) }
+
+    fun applyPreset(preset: ProviderPreset) {
+        _state.update {
+            it.copy(
+                name = preset.providerName,
+                baseUrl = preset.baseUrl,
+                apiFormat = preset.format,
+                modelId = preset.modelId,
+                modelDisplayName = preset.modelDisplayName,
+                error = null,
+            )
+        }
+    }
 
     fun save(onSaved: () -> Unit) {
         if (_state.value.isSaving) return

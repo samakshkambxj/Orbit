@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.orbit.app.data.model.ApiFormat
+import com.orbit.app.provider.ProviderPreset
 import com.orbit.app.ui.orbitViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,6 +97,19 @@ fun ProviderEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (providerId == null) {
+                Text("Start from a preset", style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(ProviderPreset.entries) { preset ->
+                        FilterChip(
+                            selected = false,
+                            onClick = { viewModel.applyPreset(preset) },
+                            label = { Text(preset.label) },
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = state.name,
                 onValueChange = viewModel::setName,
