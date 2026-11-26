@@ -269,6 +269,10 @@ class AnthropicAdapter(
                         ?.takeIf { it.isNotEmpty() }
                         ?.let { listOf(ProviderEvent.Text(it)) }
                         .orEmpty()
+                    "thinking_delta" -> delta?.get("thinking").textOrNull()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { listOf(ProviderEvent.Reasoning(it)) }
+                        .orEmpty()
                     "input_json_delta" -> {
                         delta?.get("partial_json").textOrNull()?.let {
                             toolState.append(index, it)

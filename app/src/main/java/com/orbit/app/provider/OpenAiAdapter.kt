@@ -223,9 +223,12 @@ class OpenAiAdapter(
         } ?: return emptyList()
         val delta = choice["delta"]?.let { runCatching { it.jsonObject }.getOrNull() }
         delta?.let(toolCalls::add)
+        val reasoning = delta?.get("reasoning_content").textOrNull()
+            ?: delta?.get("reasoning").textOrNull()
         val text = contentText(delta?.get("content"))
         val finish = choice["finish_reason"].textOrNull()
         val events = mutableListOf<ProviderEvent>()
+        if (!reasoning.isNullOrEmpty()) events += ProviderEvent.Reasoning(reasoning)
         if (text.isNotEmpty()) events += ProviderEvent.Text(text)
         if (!finish.isNullOrBlank()) {
             toolCalls.drain().forEach { events += ProviderEvent.ToolCallReady(it) }

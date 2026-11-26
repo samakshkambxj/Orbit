@@ -83,6 +83,8 @@ data class MessageEntity(
     val toolName: String = "",
     @ColumnInfo(defaultValue = "0")
     val toolError: Boolean = false,
+    @ColumnInfo(defaultValue = "''")
+    val reasoning: String = "",
     val status: String = "COMPLETE",
     val error: String? = null,
     val createdAt: Long,
@@ -207,7 +209,7 @@ interface MessageDao {
         MessageEntity::class,
         AssistantEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class OrbitDatabase : RoomDatabase() {
@@ -269,9 +271,17 @@ abstract class OrbitDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
         fun build(context: Context): OrbitDatabase =
             Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

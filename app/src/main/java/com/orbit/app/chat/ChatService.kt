@@ -228,6 +228,7 @@ class ChatService(
         }
 
         val content = StringBuilder()
+        val reasoning = StringBuilder()
         val calls = mutableListOf<ToolCall>()
         var lastPersist = 0L
         try {
@@ -243,6 +244,7 @@ class ChatService(
             ).collect { event ->
                 when (event) {
                     is ProviderEvent.Text -> content.append(event.value)
+                    is ProviderEvent.Reasoning -> reasoning.append(event.value)
                     is ProviderEvent.ToolCallReady -> calls += event.call
                     is ProviderEvent.Finished -> Unit
                 }
@@ -253,6 +255,7 @@ class ChatService(
                         conversations.upsertMessage(
                             assistant.copy(
                                 content = content.toString(),
+                                reasoning = reasoning.toString(),
                                 status = MessageStatus.STREAMING.name,
                             ),
                         )
@@ -261,12 +264,14 @@ class ChatService(
             }
 
             val text = content.toString().trimEnd()
+            val thoughts = reasoning.toString().trimEnd()
             if (calls.isEmpty()) {
                 if (text.isBlank()) throw ProviderErrors.emptyResponse()
                 withContext(NonCancellable) {
                     conversations.upsertMessage(
                         assistant.copy(
                             content = text,
+                            reasoning = thoughts,
                             status = MessageStatus.COMPLETE.name,
                             error = null,
                         ),
@@ -281,6 +286,7 @@ class ChatService(
                 conversations.upsertMessage(
                     assistant.copy(
                         content = text,
+                        reasoning = thoughts,
                         toolCalls = encodeCalls(calls),
                         status = if (needsApproval) {
                             MessageStatus.AWAITING_APPROVAL.name
@@ -305,6 +311,7 @@ class ChatService(
                     conversations.upsertMessage(
                         assistant.copy(
                             content = content.toString(),
+                            reasoning = reasoning.toString(),
                             status = MessageStatus.CANCELLED.name,
                             error = "Generation stopped.",
                         ),
@@ -320,6 +327,7 @@ class ChatService(
                     conversations.upsertMessage(
                         assistant.copy(
                             content = content.toString(),
+                            reasoning = reasoning.toString(),
                             status = MessageStatus.ERROR.name,
                             error = message,
                         ),

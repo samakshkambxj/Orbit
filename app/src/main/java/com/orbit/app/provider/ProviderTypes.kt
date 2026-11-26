@@ -13,6 +13,7 @@ import java.net.UnknownHostException
 
 sealed interface ProviderEvent {
     data class Text(val value: String) : ProviderEvent
+    data class Reasoning(val value: String) : ProviderEvent
     data class ToolCallReady(val call: ToolCall) : ProviderEvent
     data class Finished(val reason: String?) : ProviderEvent
 }

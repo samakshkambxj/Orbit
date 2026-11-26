@@ -83,6 +83,7 @@ class ConversationRepository(
         toolCallId: String = "",
         toolName: String = "",
         toolError: Boolean = false,
+        reasoning: String = "",
         status: String = "COMPLETE",
         error: String? = null,
     ): MessageEntity {
@@ -96,6 +97,7 @@ class ConversationRepository(
             toolCallId = toolCallId,
             toolName = toolName,
             toolError = toolError,
+            reasoning = reasoning,
             status = status,
             error = error,
             createdAt = System.currentTimeMillis(),
