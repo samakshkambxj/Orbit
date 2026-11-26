@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -96,6 +97,7 @@ fun ChatScreen(
     val currentConversation = conversation
     val providerAvailable = currentConversation == null ||
         providers.any { it.id == currentConversation.providerId }
+    val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
@@ -299,7 +301,11 @@ fun ChatScreen(
                 items(messages, key = { it.id }) { message ->
                     when (message.role) {
                         "user" -> UserMessage(message)
-                        "assistant" -> AssistantMessage(message)
+                        "assistant" -> AssistantMessage(
+                            message = message,
+                            canRetry = !isGenerating && message.id == lastAssistantId,
+                            onRetry = viewModel::retry,
+                        )
                         else -> Text(
                             text = message.content,
                             style = MaterialTheme.typography.bodySmall,
@@ -356,7 +362,11 @@ private fun UserMessage(message: MessageEntity) {
 }
 
 @Composable
-private fun AssistantMessage(message: MessageEntity) {
+private fun AssistantMessage(
+    message: MessageEntity,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
+) {
     val clipboard = LocalClipboardManager.current
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -374,6 +384,16 @@ private fun AssistantMessage(message: MessageEntity) {
                     .weight(1f)
                     .padding(start = 6.dp),
             )
+            if (canRetry) {
+                IconButton(onClick = onRetry, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = "Retry response",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
             if (message.content.isNotBlank() && message.status != MessageStatus.STREAMING.name) {
                 IconButton(
                     onClick = { clipboard.setText(AnnotatedString(message.content)) },

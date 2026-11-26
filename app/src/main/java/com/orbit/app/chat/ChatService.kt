@@ -44,6 +44,11 @@ class ChatService(
         launchGeneration(conversationId) { generate(conversationId, clean) }
     }
 
+    fun retry(conversationId: String) {
+        if (isActive(conversationId)) return
+        launchGeneration(conversationId) { retryGeneration(conversationId) }
+    }
+
     fun stop(conversationId: String) {
         jobs[conversationId]?.cancel(CancellationException("Stopped by user"))
     }
@@ -85,7 +90,19 @@ class ChatService(
             val title = userText.lineSequence().firstOrNull().orEmpty().trim().take(64)
             if (title.isNotEmpty()) conversations.rename(conversationId, title)
         }
+        respond(conversationId)
+    }
 
+    private suspend fun retryGeneration(conversationId: String) {
+        val last = conversations.lastMessage(conversationId)
+        if (last != null && last.role == "assistant") {
+            conversations.deleteMessage(last.id)
+        }
+        respond(conversationId)
+    }
+
+    private suspend fun respond(conversationId: String) {
+        val conversation = conversations.get(conversationId) ?: return
         val config = providers.configFor(conversation.providerId)
         if (config == null) {
             appendError(conversationId, "This chat's provider no longer exists. Add a provider to continue.")

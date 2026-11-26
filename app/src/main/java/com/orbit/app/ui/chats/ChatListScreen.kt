@@ -12,12 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -34,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +66,21 @@ fun ChatListScreen(
 
     var renameTarget by remember { mutableStateOf<ConversationEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<ConversationEntity?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
     val modelNames = remember(models) { models.associate { modelKey(it) to it.displayName } }
+    val filtered = remember(conversations, query, modelNames) {
+        val value = query.trim()
+        if (value.isEmpty()) {
+            conversations
+        } else {
+            conversations.filter { conversation ->
+                conversation.title.contains(value, ignoreCase = true) ||
+                    conversation.lastPreview.contains(value, ignoreCase = true) ||
+                    modelNames[modelKey(conversation.providerId, conversation.modelId)]
+                        ?.contains(value, ignoreCase = true) == true
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -94,46 +114,103 @@ fun ChatListScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        if (conversations.isEmpty()) {
-            Box(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search chats") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                EmptyState(
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Outlined.ChatBubbleOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(8.dp),
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
+            when {
+                conversations.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        EmptyState(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(8.dp),
+                                )
+                            },
+                            title = if (providers.isEmpty()) "Connect a provider"
+                            else "Start a conversation",
+                            message = if (providers.isEmpty()) {
+                                "Add an API key and a model, then ORBIT can start answering."
+                            } else {
+                                "Your chats will show up here. Tap New chat to begin."
+                            },
+                            modifier = Modifier.align(Alignment.Center),
                         )
-                    },
-                    title = if (providers.isEmpty()) "Connect a provider" else "Start a conversation",
-                    message = if (providers.isEmpty()) {
-                        "Add an API key and a model, then ORBIT can start answering."
-                    } else {
-                        "Your chats will show up here. Tap New chat to begin."
-                    },
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                items(conversations, key = { it.id }) { conversation ->
-                    ChatRow(
-                        conversation = conversation,
-                        modelName = modelNames[modelKey(conversation.providerId, conversation.modelId)],
-                        onOpen = { onOpenChat(conversation.id) },
-                        onRename = { renameTarget = conversation },
-                        onDelete = { deleteTarget = conversation },
-                    )
+                    }
+                }
+                filtered.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        EmptyState(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.SearchOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(8.dp),
+                                )
+                            },
+                            title = "No matches",
+                            message = "No chat matches “$query”.",
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 4.dp,
+                            bottom = 96.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        items(filtered, key = { it.id }) { conversation ->
+                            ChatRow(
+                                conversation = conversation,
+                                modelName = modelNames[
+                                    modelKey(conversation.providerId, conversation.modelId)
+                                ],
+                                onOpen = { onOpenChat(conversation.id) },
+                                onRename = { renameTarget = conversation },
+                                onDelete = { deleteTarget = conversation },
+                            )
+                        }
+                    }
                 }
             }
         }

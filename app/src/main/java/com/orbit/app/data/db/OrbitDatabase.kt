@@ -127,8 +127,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt DESC LIMIT :limit")
     suspend fun recent(conversationId: String, limit: Int): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun last(conversationId: String): MessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(message: MessageEntity)
+
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun delete(id: String)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteForConversation(conversationId: String)

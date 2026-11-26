@@ -20,6 +20,11 @@ class ConversationRepository(
     suspend fun messages(conversationId: String, limit: Int): List<MessageEntity> =
         messageDao.recent(conversationId, limit).reversed()
 
+    suspend fun lastMessage(conversationId: String): MessageEntity? =
+        messageDao.last(conversationId)
+
+    suspend fun deleteMessage(id: String) = messageDao.delete(id)
+
     suspend fun create(providerId: String, modelId: String, title: String = "New chat"): ConversationEntity {
         val now = System.currentTimeMillis()
         val conversation = ConversationEntity(
