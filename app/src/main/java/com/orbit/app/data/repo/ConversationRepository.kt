@@ -25,6 +25,9 @@ class ConversationRepository(
 
     suspend fun deleteMessage(id: String) = messageDao.delete(id)
 
+    suspend fun updateMessageContent(id: String, content: String) =
+        messageDao.updateContent(id, content)
+
     suspend fun create(
         providerId: String,
         modelId: String,

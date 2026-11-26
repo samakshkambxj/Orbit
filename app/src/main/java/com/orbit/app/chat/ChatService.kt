@@ -66,6 +66,20 @@ class ChatService(
         launchGeneration(conversationId) { retryGeneration(conversationId) }
     }
 
+    fun editMessage(conversationId: String, messageId: String, text: String) {
+        val clean = text.trim()
+        if (clean.isEmpty() || clean.length > MAX_MESSAGE_CHARS) return
+        if (isActive(conversationId)) return
+        launchGeneration(conversationId) {
+            val all = conversations.messages(conversationId, 10_000)
+            val index = all.indexOfFirst { it.id == messageId }
+            if (index < 0 || all[index].role != "user") return@launchGeneration
+            conversations.updateMessageContent(messageId, clean)
+            all.drop(index + 1).forEach { conversations.deleteMessage(it.id) }
+            respond(conversationId)
+        }
+    }
+
     fun approveToolCalls(conversationId: String) {
         if (isActive(conversationId)) return
         launchGeneration(conversationId) { resolveToolCalls(conversationId, approved = true) }

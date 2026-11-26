@@ -192,6 +192,9 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteForConversation(conversationId: String)
 
+    @Query("UPDATE messages SET content = :content, status = 'COMPLETE', error = NULL WHERE id = :id")
+    suspend fun updateContent(id: String, content: String)
+
     @Query("UPDATE messages SET status = 'CANCELLED', error = :reason WHERE status = 'STREAMING'")
     suspend fun markStreamingInterrupted(reason: String)
 }

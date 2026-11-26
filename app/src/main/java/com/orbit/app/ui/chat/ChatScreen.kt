@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -128,6 +129,7 @@ fun ChatScreen(
     var showRename by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var showSystemPrompt by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<MessageEntity?>(null) }
 
     val modelName = models.firstOrNull {
         it.providerId == conversation?.providerId && it.modelId == conversation?.modelId
@@ -426,7 +428,14 @@ fun ChatScreen(
             ) {
                 items(messages, key = { it.id }) { message ->
                     when (message.role) {
-                        "user" -> UserMessage(message)
+                        "user" -> UserMessage(
+                            message = message,
+                            onEdit = if (!isGenerating && message.content.isNotBlank()) {
+                                { editTarget = message }
+                            } else {
+                                null
+                            },
+                        )
                         "assistant" -> AssistantMessage(
                             message = message,
                             canRetry = !isGenerating && message.id == lastAssistantId,
@@ -477,14 +486,60 @@ fun ChatScreen(
             },
         )
     }
+
+    editTarget?.let { target ->
+        EditMessageDialog(
+            initialText = target.content,
+            onDismiss = { editTarget = null },
+            onConfirm = { text ->
+                viewModel.editMessage(target.id, text)
+                editTarget = null
+            },
+        )
+    }
 }
 
 @Composable
-private fun UserMessage(message: MessageEntity) {
+private fun EditMessageDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember(initialText) { mutableStateOf(initialText) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit message") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                minLines = 3,
+                maxLines = 10,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text) },
+                enabled = text.isNotBlank() && text != initialText,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun UserMessage(message: MessageEntity, onEdit: (() -> Unit)?) {
     val images = remember(message.attachments) {
         message.attachments.lines().filter { it.isNotBlank() }
     }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.Bottom,
+    ) {
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp),
@@ -520,6 +575,21 @@ private fun UserMessage(message: MessageEntity) {
                         )
                     }
                 }
+            }
+        }
+        if (onEdit != null) {
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier
+                    .padding(start = 2.dp)
+                    .size(30.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit message",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp),
+                )
             }
         }
     }

@@ -102,6 +102,11 @@ class ChatViewModel(
         container.chat.retry(conversationId)
     }
 
+    fun editMessage(messageId: String, text: String) {
+        if (isGenerating.value) return
+        container.chat.editMessage(conversationId, messageId, text)
+    }
+
     fun selectModel(providerId: String, modelId: String) {
         viewModelScope.launch {
             container.conversations.setModel(conversationId, providerId, modelId)
