@@ -3,6 +3,7 @@ package com.orbit.app.ui.chat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -69,6 +72,7 @@ import androidx.compose.ui.Alignment
 import android.content.Intent
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -78,8 +82,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.orbit.app.chat.DiffKind
 import com.orbit.app.chat.decodeStoredToolCalls
 import com.orbit.app.chat.describeToolCall
+import com.orbit.app.chat.diffLines
 import com.orbit.app.data.db.MessageEntity
 import com.orbit.app.data.model.MessageStatus
 import com.orbit.app.data.model.ToolCall
@@ -136,6 +142,10 @@ fun ChatScreen(
     }
     val pendingCalls = remember(pendingApproval?.id, pendingApproval?.toolCalls) {
         decodeStoredToolCalls(pendingApproval?.toolCalls.orEmpty())
+    }
+    val toolPreviews by viewModel.toolPreviews.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingApproval?.id) {
+        viewModel.loadToolPreviews(pendingCalls)
     }
     val agentNeedsWorkspace = conversation?.agentEnabled == true && workspace == null
     val listState = rememberLazyListState()
@@ -347,6 +357,7 @@ fun ChatScreen(
                 if (pendingApproval != null && pendingCalls.isNotEmpty() && !isGenerating) {
                     ApprovalCard(
                         calls = pendingCalls,
+                        previews = toolPreviews,
                         onApprove = viewModel::approveToolCalls,
                         onDeny = viewModel::denyToolCalls,
                     )
@@ -666,6 +677,7 @@ private fun ToolCallRow(call: ToolCall) {
 @Composable
 private fun ApprovalCard(
     calls: List<ToolCall>,
+    previews: List<ToolPreview>,
     onApprove: () -> Unit,
     onDeny: () -> Unit,
 ) {
@@ -674,7 +686,6 @@ private fun ApprovalCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Text(
@@ -683,11 +694,26 @@ private fun ApprovalCard(
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
-                text = "These calls change files in your workspace.",
+                text = "Review the proposed changes to your workspace.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
-            calls.forEach { call -> ToolCallRow(call) }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .heightIn(max = 300.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+            ) {
+                calls.forEach { call ->
+                    ToolCallRow(call)
+                    previews.firstOrNull { it.call.id == call.id }?.let { preview ->
+                        if (preview.oldText != null || !preview.newText.isNullOrEmpty()) {
+                            DiffPreview(preview)
+                        }
+                    }
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.End,
                 modifier = Modifier.fillMaxWidth(),
@@ -699,6 +725,74 @@ private fun ApprovalCard(
                 ) { Text("Approve") }
             }
         }
+    }
+}
+
+@Composable
+private fun DiffPreview(preview: ToolPreview) {
+    var expanded by remember(preview.call.id, preview.oldText, preview.newText) {
+        mutableStateOf(false)
+    }
+    val diff = remember(preview.oldText, preview.newText) {
+        diffLines(preview.oldText.orEmpty(), preview.newText.orEmpty())
+    }
+    val changed = diff.count { it.kind != DiffKind.SAME }
+    if (changed == 0) {
+        Text(
+            text = "No text changes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        return
+    }
+    val limit = if (expanded) diff.size else 24
+    val shown = diff.take(limit)
+
+    Column {
+        shown.forEach { line -> DiffRow(line) }
+        if (diff.size > shown.size) {
+            TextButton(onClick = { expanded = true }) {
+                Text("Show full diff (${diff.size} lines)")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiffRow(line: com.orbit.app.chat.DiffLine) {
+    val background = when (line.kind) {
+        DiffKind.ADDED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        DiffKind.REMOVED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+        DiffKind.SAME -> Color.Transparent
+    }
+    val foreground = when (line.kind) {
+        DiffKind.ADDED -> MaterialTheme.colorScheme.onPrimaryContainer
+        DiffKind.REMOVED -> MaterialTheme.colorScheme.onErrorContainer
+        DiffKind.SAME -> MaterialTheme.colorScheme.onTertiaryContainer
+    }
+    val prefix = when (line.kind) {
+        DiffKind.ADDED -> "+"
+        DiffKind.REMOVED -> "-"
+        DiffKind.SAME -> " "
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    ) {
+        Text(
+            text = prefix,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = foreground,
+            modifier = Modifier.width(14.dp),
+        )
+        Text(
+            text = line.text.ifEmpty { " " },
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = foreground,
+        )
     }
 }
 

@@ -19,6 +19,13 @@ fun decodeStoredToolCalls(raw: String): List<ToolCall> =
         }.getOrDefault(emptyList())
     }
 
+fun toolArgument(call: ToolCall, key: String): String? {
+    val args = runCatching { toolJson.parseToJsonElement(call.arguments).jsonObject }
+        .getOrNull()
+        ?: return null
+    return args[key]?.jsonPrimitive?.contentOrNull
+}
+
 fun describeToolCall(call: ToolCall): String {
     val args = runCatching { toolJson.parseToJsonElement(call.arguments).jsonObject }
         .getOrNull()
