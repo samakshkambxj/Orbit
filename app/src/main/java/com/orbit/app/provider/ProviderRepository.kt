@@ -75,6 +75,10 @@ class ProviderRepository(
         providerDao.delete(id)
     }
 
+    suspend fun deleteModel(id: String) = withContext(Dispatchers.IO) {
+        modelDao.delete(id)
+    }
+
     suspend fun configFor(id: String): ProviderConfig? {
         val provider = providerDao.get(id) ?: return null
         val format = runCatching { ApiFormat.valueOf(provider.apiFormat) }.getOrDefault(ApiFormat.OPENAI)

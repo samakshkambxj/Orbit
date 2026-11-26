@@ -105,6 +105,9 @@ interface ModelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(model: ModelEntity)
 
+    @Query("DELETE FROM models WHERE id = :id")
+    suspend fun delete(id: String)
+
     @Query("DELETE FROM models WHERE providerId = :providerId")
     suspend fun deleteForProvider(providerId: String)
 }

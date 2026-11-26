@@ -3,13 +3,17 @@ package com.orbit.app.ui.providers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbit.app.core.AppContainer
+import com.orbit.app.data.db.ModelEntity
 import com.orbit.app.data.model.ApiFormat
 import com.orbit.app.data.model.ChatRequest
 import com.orbit.app.data.model.ChatTurn
 import com.orbit.app.data.model.ProviderInput
 import com.orbit.app.provider.ProviderPreset
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -35,6 +39,12 @@ class ProviderEditViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(ProviderEditState())
     val state = _state.asStateFlow()
+
+    val models = if (providerId == null) {
+        flowOf(emptyList<ModelEntity>())
+    } else {
+        container.providers.observeModels(providerId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<ModelEntity>())
 
     init {
         viewModelScope.launch {
@@ -147,6 +157,10 @@ class ProviderEditViewModel(
                 }
             }
         }
+    }
+
+    fun deleteModel(id: String) {
+        viewModelScope.launch { container.providers.deleteModel(id) }
     }
 
     private suspend fun persist(): Result<String> = runCatching {

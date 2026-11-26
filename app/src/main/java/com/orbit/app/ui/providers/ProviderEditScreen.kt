@@ -16,12 +16,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,10 +44,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.orbit.app.data.db.ModelEntity
 import com.orbit.app.data.model.ApiFormat
 import com.orbit.app.provider.ProviderPreset
+import com.orbit.app.ui.components.ConfirmDialog
 import com.orbit.app.ui.orbitViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,7 +63,9 @@ fun ProviderEditScreen(
         ProviderEditViewModel(providerId, it)
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val models by viewModel.models.collectAsStateWithLifecycle()
     var keyVisible by remember { mutableStateOf(false) }
+    var modelToDelete by remember { mutableStateOf<ModelEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -172,7 +179,9 @@ fun ProviderEditScreen(
                 onValueChange = viewModel::setModelId,
                 label = { Text("Model ID") },
                 placeholder = { Text("gpt-4o-mini") },
-                supportingText = { Text("The exact model name the provider expects.") },
+                supportingText = {
+                    Text("Saving adds or updates this model. Enter a different ID to add another.")
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -187,6 +196,63 @@ fun ProviderEditScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (providerId != null) {
+                Text("Saved models", style = MaterialTheme.typography.labelLarge)
+                if (models.isEmpty()) {
+                    Text(
+                        text = "No models saved yet. Fill in the fields above and save to add one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column {
+                            models.forEachIndexed { index, model ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = model.displayName,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = model.modelId,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    IconButton(onClick = { modelToDelete = model }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Delete,
+                                            contentDescription = "Remove ${model.displayName}",
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                                if (index != models.lastIndex) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.padding(start = 12.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             state.error?.let { message ->
                 Surface(
@@ -271,5 +337,18 @@ fun ProviderEditScreen(
                 modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
             )
         }
+    }
+
+    modelToDelete?.let { model ->
+        ConfirmDialog(
+            title = "Remove model?",
+            message = "“${model.displayName}” will be removed from this provider. Chats using it will need another model.",
+            confirmLabel = "Remove",
+            onDismiss = { modelToDelete = null },
+            onConfirm = {
+                viewModel.deleteModel(model.id)
+                modelToDelete = null
+            },
+        )
     }
 }
