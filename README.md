@@ -4,8 +4,9 @@ ORBIT is an Android AI client built with Kotlin and Jetpack Compose. The goal is
 a clean chat experience that connects to your own model providers, with a coding
 agent planned on top.
 
-The app is early. The repository currently contains the project setup, theme and
-a minimal Compose shell; chat, providers and settings are being built next.
+The app is early but usable: you can add an OpenAI-compatible or Anthropic
+provider, pick a model, and chat with streaming responses. Conversations and
+keys stay on the device.
 
 ## Requirements
 
@@ -46,7 +47,8 @@ app/src/main/java/com/orbit/app/
 ## Status
 
 - [x] Compose project, theme and CI
-- [ ] Chat list and chat screen
-- [ ] Provider setup with encrypted API keys
-- [ ] Streaming responses with persistence
+- [x] Chat list and chat screen
+- [x] Provider setup with encrypted API keys
+- [x] Streaming responses with persistence
+- [ ] Search, attachments and assistant presets
 - [ ] Coding agent, editor, Git and terminal

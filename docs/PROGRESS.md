@@ -1,21 +1,27 @@
 # ORBIT progress
 
-## 2026-11-26 — clean rebuild
+## 2026-11-26 — chat, providers and settings
 
-- Replaced the previous codebase with a blank Kotlin/Compose project.
-- Added Gradle 8.9 wrapper, AGP 8.7.3, Kotlin 2.0.21 and Compose Material 3.
-- Added the app entry point, theme, resources and a smoke test.
-- Added GitHub Actions CI for unit tests, lint and debug APK assembly.
+- Added Room storage for providers, models, conversations and messages.
+- Added DataStore settings for theme, dynamic color and the default model.
+- Added encrypted API key storage backed by the Android Keystore.
+- Added streaming OpenAI-compatible and Anthropic clients with SSE parsing,
+  cancellation, timeouts and readable error mapping.
+- Added a chat runtime that persists partial output, survives rotation and marks
+  interrupted generations after a restart.
+- Added the Compose UI: chat list, chat screen with Markdown and code blocks,
+  model picker, provider management with connection test, and settings.
 
 ### Status
 
-- Initial commits: `5144de2`, `5a8ab9e`, `24dc3b3`, `1a39ee9`, `529d731`.
-- CI: green. Run `45835564282` passed unit tests, lint and debug APK assembly in
-  3m12s. The `orbit-debug-1` artifact was uploaded.
+- Commits: `b9f1f41`, `782a163`, `0a49756`.
+- CI: green. Run `45838642627` passed unit tests, lint and debug APK assembly in
+  4m09s.
 
 ### Next
 
-1. Build the Rikka-style application shell: navigation, chat surface, composer,
-   model/provider pickers and settings.
-2. Add provider configuration and persistent chat.
-3. Add the coding agent, approvals, diff review, editor, Git and terminal.
+1. Search across conversations and message actions (copy, retry, edit).
+2. Assistant presets and per-chat system prompts.
+3. Attachments and image input.
+4. Coding agent with tool calls, approvals, diff review, editor, Git and
+   terminal.
