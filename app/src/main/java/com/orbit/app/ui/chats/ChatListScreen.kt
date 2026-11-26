@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.DropdownMenu
@@ -226,6 +228,9 @@ fun ChatListScreen(
                                     onOpen = { onOpenChat(conversation.id) },
                                     onRename = { renameTarget = conversation },
                                     onDelete = { deleteTarget = conversation },
+                                    onTogglePin = {
+                                        viewModel.setPinned(conversation.id, !conversation.pinned)
+                                    },
                                 )
                             }
                         }
@@ -266,6 +271,7 @@ private fun ChatRow(
     onOpen: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onTogglePin: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -279,6 +285,16 @@ private fun ChatRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (conversation.pinned) {
+                        Icon(
+                            imageVector = Icons.Outlined.PushPin,
+                            contentDescription = "Pinned",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .size(14.dp),
+                        )
+                    }
                     Text(
                         text = conversation.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -322,6 +338,14 @@ private fun ChatRow(
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
+                        text = { Text(if (conversation.pinned) "Unpin" else "Pin") },
+                        leadingIcon = { Icon(Icons.Outlined.PushPin, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onTogglePin()
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text("Rename") },
                         leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                         onClick = {
@@ -357,6 +381,10 @@ private fun groupConversations(conversations: List<ConversationEntity>): List<Ch
     val today = LocalDate.now(zone)
     val grouped = LinkedHashMap<String, MutableList<ConversationEntity>>()
     conversations.forEach { conversation ->
+        if (conversation.pinned) {
+            grouped.getOrPut("Pinned") { mutableListOf() } += conversation
+            return@forEach
+        }
         val date = Instant.ofEpochMilli(conversation.updatedAt).atZone(zone).toLocalDate()
         val days = ChronoUnit.DAYS.between(date, today)
         val label = when {

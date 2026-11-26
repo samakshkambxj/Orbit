@@ -48,6 +48,8 @@ data class ConversationEntity(
     val systemPrompt: String = "",
     @ColumnInfo(defaultValue = "0")
     val agentEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
+    val pinned: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -128,7 +130,7 @@ interface ModelDao {
 
 @Dao
 interface ConversationDao {
-    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM conversations ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
     @Query("SELECT * FROM conversations WHERE id = :id")
@@ -154,6 +156,9 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET agentEnabled = :enabled, updatedAt = :now WHERE id = :id")
     suspend fun updateAgentEnabled(id: String, enabled: Boolean, now: Long)
+
+    @Query("UPDATE conversations SET pinned = :pinned WHERE id = :id")
+    suspend fun updatePinned(id: String, pinned: Boolean)
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: String)
@@ -209,7 +214,7 @@ interface MessageDao {
         MessageEntity::class,
         AssistantEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class OrbitDatabase : RoomDatabase() {
@@ -279,9 +284,23 @@ abstract class OrbitDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun build(context: Context): OrbitDatabase =
             Room.databaseBuilder(context, OrbitDatabase::class.java, "orbit.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .build()
     }
 }

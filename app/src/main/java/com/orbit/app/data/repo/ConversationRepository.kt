@@ -69,6 +69,10 @@ class ConversationRepository(
         conversationDao.updateAgentEnabled(id, enabled, System.currentTimeMillis())
     }
 
+    suspend fun setPinned(id: String, pinned: Boolean) {
+        conversationDao.updatePinned(id, pinned)
+    }
+
     suspend fun delete(id: String) {
         messageDao.deleteForConversation(id)
         conversationDao.delete(id)

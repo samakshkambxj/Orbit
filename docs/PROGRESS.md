@@ -13,6 +13,7 @@
 - Added message editing: edit a sent message to regenerate the conversation
   from that point.
 - Added reasoning display for models that stream thinking content.
+- Added chat pinning, with pinned chats kept at the top of the list.
 
 ### Status
 

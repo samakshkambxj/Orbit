@@ -153,7 +153,12 @@ fun ChatScreen(
     val agentNeedsWorkspace = conversation?.agentEnabled == true && workspace == null
     val listState = rememberLazyListState()
 
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
+    LaunchedEffect(
+        messages.size,
+        messages.lastOrNull()?.content?.length,
+        messages.lastOrNull()?.reasoning?.length,
+        messages.lastOrNull()?.toolCalls?.length,
+    ) {
         if (messages.isNotEmpty()) {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             if (lastVisible >= messages.lastIndex - 1) {

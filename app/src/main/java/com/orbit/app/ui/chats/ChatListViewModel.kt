@@ -52,4 +52,8 @@ class ChatListViewModel(private val container: AppContainer) : ViewModel() {
     fun delete(id: String) {
         viewModelScope.launch { container.conversations.delete(id) }
     }
+
+    fun setPinned(id: String, pinned: Boolean) {
+        viewModelScope.launch { container.conversations.setPinned(id, pinned) }
+    }
 }
