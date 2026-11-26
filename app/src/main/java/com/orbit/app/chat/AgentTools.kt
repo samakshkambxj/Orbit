@@ -173,7 +173,11 @@ class AgentTools(
         val entries = workspace.list(path).getOrThrow()
         if (entries.isEmpty()) return ToolOutcome("The folder is empty.")
         val text = entries.take(MAX_LIST_ENTRIES).joinToString("\n") { entry ->
-            if (entry.isDirectory) "${entry.name}/" else "${entry.name} (${formatSize(entry.size)})"
+            if (entry.isDirectory) {
+                "${entry.path}/"
+            } else {
+                "${entry.path} (${formatSize(entry.size)})"
+            }
         }
         return ToolOutcome(text)
     }

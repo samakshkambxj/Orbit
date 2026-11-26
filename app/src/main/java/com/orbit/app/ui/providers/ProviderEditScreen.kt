@@ -76,7 +76,9 @@ fun ProviderEditScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                title = { Text(if (providerId == null) "Add provider" else "Edit provider") },
+                title = {
+                    Text(if (state.savedId == null) "Add provider" else "Edit provider")
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
@@ -105,7 +107,7 @@ fun ProviderEditScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (providerId == null) {
+            if (state.savedId == null) {
                 Text("Start from a preset", style = MaterialTheme.typography.labelLarge)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(ProviderPreset.entries) { preset ->
