@@ -1,5 +1,6 @@
 package com.orbit.app.ui.chat
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbit.app.core.AppContainer
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
@@ -30,6 +32,12 @@ class ChatViewModel(
     private val _input = MutableStateFlow("")
     val input = _input.asStateFlow()
 
+    private val _pendingImages = MutableStateFlow<List<String>>(emptyList())
+    val pendingImages = _pendingImages.asStateFlow()
+
+    private val _imageError = MutableStateFlow<String?>(null)
+    val imageError = _imageError.asStateFlow()
+
     val isGenerating = container.chat.active
         .map { conversationId in it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -38,11 +46,37 @@ class ChatViewModel(
         _input.value = value
     }
 
+    fun addImage(uri: Uri) {
+        if (_pendingImages.value.size >= MAX_IMAGES) {
+            _imageError.value = "You can attach up to $MAX_IMAGES images."
+            return
+        }
+        _imageError.value = null
+        viewModelScope.launch {
+            container.images.save(uri)
+                .onSuccess { path -> _pendingImages.update { it + path } }
+                .onFailure { error ->
+                    _imageError.value = error.message ?: "Could not add that image."
+                }
+        }
+    }
+
+    fun removeImage(path: String) {
+        _pendingImages.update { it - path }
+        container.images.delete(path)
+    }
+
+    fun clearImageError() {
+        _imageError.value = null
+    }
+
     fun send() {
         val text = _input.value.trim()
-        if (text.isEmpty() || isGenerating.value) return
+        val images = _pendingImages.value
+        if ((text.isEmpty() && images.isEmpty()) || isGenerating.value) return
         _input.value = ""
-        container.chat.send(conversationId, text)
+        _pendingImages.value = emptyList()
+        container.chat.send(conversationId, text, images)
     }
 
     fun stop() {
@@ -73,8 +107,16 @@ class ChatViewModel(
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
             container.chat.stop(conversationId)
+            val attachments = container.conversations
+                .messages(conversationId, 10_000)
+                .flatMap { it.attachments.lines() }
             container.conversations.delete(conversationId)
+            attachments.filter { it.isNotBlank() }.forEach { container.images.delete(it) }
             onDeleted()
         }
+    }
+
+    private companion object {
+        const val MAX_IMAGES = 4
     }
 }

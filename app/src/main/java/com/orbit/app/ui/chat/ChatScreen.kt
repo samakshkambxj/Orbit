@@ -1,6 +1,10 @@
 package com.orbit.app.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,14 +21,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -59,12 +67,14 @@ import androidx.compose.ui.Alignment
 import android.content.Intent
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.orbit.app.data.db.MessageEntity
 import com.orbit.app.data.model.MessageStatus
 import com.orbit.app.ui.components.ConfirmDialog
@@ -72,6 +82,7 @@ import com.orbit.app.ui.components.MarkdownText
 import com.orbit.app.ui.components.RenameChatDialog
 import com.orbit.app.ui.components.SystemPromptDialog
 import com.orbit.app.ui.orbitViewModel
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +101,13 @@ fun ChatScreen(
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val input by viewModel.input.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
+    val pendingImages by viewModel.pendingImages.collectAsStateWithLifecycle()
+    val imageError by viewModel.imageError.collectAsStateWithLifecycle()
+    val pickImage = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) viewModel.addImage(uri)
+    }
 
     var modelMenuOpen by remember { mutableStateOf(false) }
     var actionsOpen by remember { mutableStateOf(false) }
@@ -273,7 +291,16 @@ fun ChatScreen(
                     value = input,
                     onValueChange = viewModel::setInput,
                     isGenerating = isGenerating,
-                    canSend = input.isNotBlank(),
+                    canSend = input.isNotBlank() || pendingImages.isNotEmpty(),
+                    pendingImages = pendingImages,
+                    imageError = imageError,
+                    onAttach = {
+                        viewModel.clearImageError()
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onRemoveImage = viewModel::removeImage,
                     onSend = viewModel::send,
                     onStop = viewModel::stop,
                 )
@@ -377,19 +404,45 @@ fun ChatScreen(
 
 @Composable
 private fun UserMessage(message: MessageEntity) {
+    val images = remember(message.attachments) {
+        message.attachments.lines().filter { it.isNotBlank() }
+    }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp),
             modifier = Modifier.widthIn(max = 340.dp),
         ) {
-            SelectionContainer {
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                )
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                if (images.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    ) {
+                        images.forEach { path ->
+                            AsyncImage(
+                                model = File(path),
+                                contentDescription = "Attached image",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(132.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                            )
+                        }
+                    }
+                    if (message.content.isNotBlank()) {
+                        Spacer(modifier = Modifier.size(8.dp))
+                    }
+                }
+                if (message.content.isNotBlank()) {
+                    SelectionContainer {
+                        Text(
+                            text = message.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
             }
         }
     }
@@ -489,39 +542,102 @@ private fun Composer(
     onValueChange: (String) -> Unit,
     isGenerating: Boolean,
     canSend: Boolean,
+    pendingImages: List<String>,
+    imageError: String?,
+    onAttach: () -> Unit,
+    onRemoveImage: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.Bottom,
         ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Message ORBIT") },
-                maxLines = 6,
-                shape = RoundedCornerShape(24.dp),
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            FilledIconButton(
-                onClick = if (isGenerating) onStop else onSend,
-                enabled = isGenerating || canSend,
-                modifier = Modifier.size(52.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (isGenerating) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primary,
-                ),
-            ) {
+            if (imageError != null) {
+                Text(
+                    text = imageError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+            if (pendingImages.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 8.dp),
+                ) {
+                    pendingImages.forEach { path ->
+                        PendingImage(path = path, onRemove = { onRemoveImage(path) })
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                IconButton(
+                    onClick = onAttach,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AddPhotoAlternate,
+                        contentDescription = "Attach image",
+                    )
+                }
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message ORBIT") },
+                    maxLines = 6,
+                    shape = RoundedCornerShape(24.dp),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                FilledIconButton(
+                    onClick = if (isGenerating) onStop else onSend,
+                    enabled = isGenerating || canSend,
+                    modifier = Modifier.size(52.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isGenerating) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = if (isGenerating) Icons.Outlined.Stop
+                        else Icons.AutoMirrored.Filled.Send,
+                        contentDescription = if (isGenerating) "Stop generating" else "Send",
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingImage(path: String, onRemove: () -> Unit) {
+    Box {
+        AsyncImage(
+            model = File(path),
+            contentDescription = "Attached image",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(2.dp),
+        ) {
+            IconButton(onClick = onRemove, modifier = Modifier.size(20.dp)) {
                 Icon(
-                    imageVector = if (isGenerating) Icons.Outlined.Stop
-                    else Icons.AutoMirrored.Filled.Send,
-                    contentDescription = if (isGenerating) "Stop generating" else "Send",
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Remove image",
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }

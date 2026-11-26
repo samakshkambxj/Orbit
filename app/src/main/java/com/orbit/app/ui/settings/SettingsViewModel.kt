@@ -44,7 +44,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun deleteAllChats() {
         viewModelScope.launch {
             container.conversations.observeAll().first().forEach { conversation ->
+                val messages = container.conversations.messages(conversation.id, 10_000)
                 container.conversations.delete(conversation.id)
+                messages
+                    .flatMap { it.attachments.lines() }
+                    .filter { it.isNotBlank() }
+                    .forEach { container.images.delete(it) }
             }
         }
     }
