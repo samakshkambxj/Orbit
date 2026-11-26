@@ -50,5 +50,6 @@ app/src/main/java/com/orbit/app/
 - [x] Chat list and chat screen
 - [x] Provider setup with encrypted API keys
 - [x] Streaming responses with persistence
-- [ ] Search, attachments and assistant presets
+- [x] Chat search, assistant presets and per-chat prompts
+- [ ] Attachments and image input
 - [ ] Coding agent, editor, Git and terminal
